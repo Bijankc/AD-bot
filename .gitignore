@@ -1,0 +1,8 @@
+raid.ini
+raid.log
+shots/
+_report/
+release/
+AD-Bot-report*.zip
+*.tmp
+
