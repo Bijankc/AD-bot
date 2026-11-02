@@ -23,8 +23,5 @@ Meant to run while you are away (night / work). It controls the real mouse and k
 - Character recommendation is not implemented yet.
 - Automating Roblox games may violate the Roblox / game rules. Use at your own risk.
 
-## Sharing
-Run make_release.ps1 - it builds release\AD-Bot-public.zip without your raid.ini, logs and screenshots.
-
-## Card selling (optional, off by default)
+## Card selling (optional, on by default)
 Modes > Card selling. The bot sells only cards that look like your own pictures: open the Bag > Mass sell tab, hold the mouse over the middle of a card you want to sell and press **F6** (add each card type once, also one from the left column). Then turn on Sell cards and set when and how much to sell. Use **Test mode** first: it selects the cards but does not press Sell.
