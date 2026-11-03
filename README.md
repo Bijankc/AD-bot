@@ -4,7 +4,7 @@
 
 > Roblox disconnects, freezes on a teleport, loops a retry screen or just closes? AD Bot was made first of all for players for whom this happens **all the time**. It notices the problem, restarts the game, joins again and carries on, so your night run does not end at the first crash.
 
-Version 0.1.5 · Windows · by Samogub
+Version 0.1.8 · Windows · by Samogub
 
 ![Dashboard](docs/dashboard.png)
 
@@ -25,7 +25,6 @@ Version 0.1.5 · Windows · by Samogub
 - **Raid:** every hour (only Divine Guardian Raid is ready, others are coming soon).
 - **Speed Raid:** every 30 minutes with the next unused character.
 - **Infinity:** between raids.
-- **Card selling:** sells only the cards you choose when the Bag fills up. Try **Test mode** first.
 - **Skills and combo:** turn skills off and choose the combo.
 - **Dungeons:** coming soon.
 
@@ -45,7 +44,7 @@ Version 0.1.5 · Windows · by Samogub
 2. Open Roblox, join the game and wait in the lobby.
 3. Run `RaidBot.ahk`. On the first start press **Check now**, fix what it shows, then **Continue**.
 4. Pick the raid and modes.
-5. **F1** starts, **F2** stops, **F3** reloads the bot, **F6** adds a card picture for selling.
+5. **F1** starts, **F2** stops, **F3** reloads the bot.
 
 After a restart the bot returns to the author's private server by default. To use your own, put `serverLink=<your link>` under `[raid]` in `raid.ini`.
 

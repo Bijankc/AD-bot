@@ -59,21 +59,6 @@ BAG_BTN      := [1850, 700]              ; BAG праворуч (у лобі і 
 LOADOUT_BOX  := [880, 192, 230, 50]      ; кнопка "Loadout N ▼" у вікні Bag
 LOADOUT_ROWS := [[1085, 290], [1085, 394], [1085, 497]]
 BAG_CLOSE    := [1455, 219]
-; продаж cards (31.10): Bag -> вкладка Mass sell -> тап по картках -> Sell -> Yes. Продаємо ЛИШЕ картки, що
-; точно збігаються з еталонами img\sell\*.png (вирізки 112x112 з Bag, разом із Lv. і замком/написом внизу -
-; картка із замком чи Equipped не збігається). Нову картку додати: вирізати її з Bag 1920x1080 у img\sell\.
-SELLDIR      := IMGDIR "sell\"
-SELL_TAB_CARDS := [473, 288]             ; вкладки Bag: Cards і Mass sell
-SELL_TAB     := [1412, 288]
-SELL_GRID    := [770, 322, 1470, 890]    ; сітка cards (x1, y1, x2, y2); картки обрізані краєм не збігаються
-SELL_BAR     := [1481, 322, 1489, 890]   ; смужка прокрутки сітки: повзунок кольору 33323F
-SELL_BTN     := [585, 775]               ; Sell, Cancel - ліва панель Mass sell
-SELL_CANCEL  := [585, 835]
-SELL_YES     := [850, 548]               ; вікно "Sell N cards for X gold?": Yes, No
-SELL_NO      := [1083, 548]
-SELL_COUNT_BOX := [455, 380, 260, 36]    ; "Cards Selected: N"
-SELL_ASK_BOX := [730, 410, 460, 90]      ; "Sell N cards for X gold?"
-CARDS_BOX    := [530, 185, 460, 53]      ; "Card limit 316/500"
 ; Speed Raid (28.10): меню режимів -> картка SPEED RAID -> вікно з Start -> вибір персонажа -> Start.
 ; Кожен персонаж - раз на тиждень (використані затемнені), режим - раз на 30 min.
 SPEED_LAST_MIN  := 52                    ; після цієї minилини не починаємо (рейд о :00; бос гине за 1-2 min)
@@ -249,14 +234,6 @@ cfg := Map(
     "farWalk",    IniRead(INI, "raid", "farWalk", "2500"),      ; Divine: після 1/2 немає Combo -> вперед стільки ms with Q x3 (0 = вимк.)
     "soloRaid",   IniRead(INI, "raid", "soloRaid", "1"),        ; рейд: вмикати Friends Only (соло, без інших гравців)
     "loadouts",   IniRead(INI, "raid", "loadouts", "0"),     ; міняти loadout: рейд - 1, Infinity - 2, Speed Raid - 3
-    "sellCards",  IniRead(INI, "raid", "sellCards", "1"),       ; продавати картки (Mass sell), коли в Bag їх від sellAt; лише ті, що є в img\sell\
-    "sellAt",     IniRead(INI, "raid", "sellAt", "50"),        ; з скількох cards у Bag продавати
-    "sellMax",    IniRead(INI, "raid", "sellMax", "120"),       ; найбільше cards за один продаж
-    "sellEvery",  IniRead(INI, "raid", "sellEvery", "5"),       ; не частіше разу на стільки minилин (0 - без паузи, для тесту)
-    "sellUntil",  IniRead(INI, "raid", "sellUntil", "50"),      ; не продавати після цієї хвилини години (60 - без обмеження)
-    "sellPasses", IniRead(INI, "raid", "sellPasses", "2"),      ; найбільше проходів за один продаж
-    "sellDry",    IniRead(INI, "raid", "sellDry", "0"),         ; 1 - тест: вибрати картки, але Sell не тиснути
-    "sellOff",    IniRead(INI, "raid", "sellOff", ""),          ; імена картинок з img\sell\, які вимкнено (через пробіл)
     "speed",      IniRead(INI, "raid", "speed", "1"),           ; Speed Raid раз на 30 min (пріоритет: рейд > speed > Infinity)
     "seekAfter",  IniRead(INI, "raid", "seekAfter", "5000"),    ; скільки ms без влучань, щоб почати пошук
     "camSens",    IniRead(INI, "raid", "camSens", "36"),          ; чутливість миші в грі x100 (0.36 -> 36): від неї залежить, на скільки px вести мишу для повороту камери
@@ -294,7 +271,6 @@ if A_Args.Length                                        ; "start" or "fight" - s
 F1:: Start()
 F2:: Stop()
 F3:: RestartBot()
-F6:: SellCapture()
 
 SkillOn(key) => !InStr(" " cfg["skillsOff"] " ", " " key " ")
 
@@ -704,8 +680,7 @@ Start() {
         sess[k] := 0
     Log("start v" APP_VERSION ", order: " cfg["order"] (cfg["skillsOff"] != "" ? ", disabled: " cfg["skillsOff"] : "")
         . ", loadouts=" cfg["loadouts"] ", raid=" cfg["raid"] ", infinity=" cfg["infinity"] ", speed=" cfg["speed"]
-        . ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"]
-        . ", sellCards=" cfg["sellCards"] (cfg["sellCards"] = "1" ? " (from " cfg["sellAt"] ", max " cfg["sellMax"] ")" : ""))
+        . ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"])
     StartupChecks()
     PlaceId()                                             ; поки гра запущена - запам'ятовуємо, куди перезаходити
     OcrServer()                                         ; OCR-сервер вантажиться заздалегідь
@@ -1946,8 +1921,6 @@ EnsureLoadout(n, onlyCheck := false) {
             Sleep 700
         }
     }
-    if bagOpen && cur = n && n = 2 && running             ; після рейду (loadout 2 = Infinity) - час продати зайві картки
-        SellCards()
     static bagShotAt := 0
     if bagOpen && (!bagShotAt || A_TickCount - bagShotAt > 30 * 60000) {   ; скільки cards у Bag (зліва вгорі) -
         bagShotAt := A_TickCount                          ; щоб помітити, коли інвентар заповнюється (29.10)
@@ -1968,235 +1941,6 @@ EnsureLoadout(n, onlyCheck := false) {
         Log("  loadout " n " failed (read: " (cur ? cur : bagOpen ? "nothing after switching" : "Bag did not open") ") - retrying in " failWait // 60000 " min")
         Screenshot("loadout")
     }
-}
-
-; Скільки cards у Bag: [є, ліміт] з "Card limit 316/500" у відкритому Bag; 0 - не прочитали
-ReadCards() {
-    if RegExMatch(OcrRegion(CARDS_BOX), "(\d{1,4})\s*/\s*(\d{3,4})", &m) && Integer(m[1]) <= Integer(m[2])
-        return [Integer(m[1]), Integer(m[2])]
-    return 0
-}
-
-; Перша картка в сітці, що збігається з будь-яким еталоном; x, y - лівий верхній кут еталона
-FindSellCard(files, minX, &x, &y) {
-    x := 0
-    y := 0
-    for f in files {
-        try
-            if ImageSearch(&x, &y, Max(SELL_GRID[1], minX), SELL_GRID[2], SELL_GRID[3], SELL_GRID[4], "*40 " f)
-                return true
-    }
-    return false
-}
-
-; Y повзунка смужки прокрутки сітки; -1 - смужки нема (усі картки вміщаються) або не знайшли
-SellBarY() {
-    try
-        if PixelSearch(&bx, &by, SELL_BAR[1], SELL_BAR[2], SELL_BAR[3], SELL_BAR[4], 0x33323F, 12)
-            return by
-    return -1
-}
-
-; Колесо над сіткою cards (як ListWheel: Roblox ловить колесо лише після руху миші)
-GridWheel(n, dir := "Down") {
-    cx := (SELL_GRID[1] + SELL_GRID[3]) // 2, cy := (SELL_GRID[2] + SELL_GRID[4]) // 2
-    MouseMove cx + 8, cy + 8, 0
-    Sleep 80
-    MouseMove cx, cy, 0
-    Sleep 150
-    Loop n {
-        Send "{Wheel" dir "}"
-        Sleep 25
-    }
-    ParkMouse()                                           ; картка під курсором підсвічена і з еталоном не збігається
-    Sleep 500
-}
-
-; Сітка на початок списку: Bag пам'ятає, де її лишили
-SellToTop() {
-    b0 := SellBarY()
-    Loop 30 {
-        if b0 < 0
-            return
-        GridWheel(10, "Up")
-        b1 := SellBarY()
-        if b1 = b0
-            return
-        b0 := b1
-    }
-}
-
-; Bag відкритий. Коли cards від sellAt: Mass sell -> тапаємо картки, що збігаються з img\sell\*.png -> Sell -> Yes.
-; Незворотне, тому: продаємо лише точні збіги з еталонами, не більше sellMax, і лише якщо вікно підтвердження
-; каже число 1..(скільки тапнули); інакше No і Cancel, знімок shots\*_sell.png. Не частіше разу на 5 min.
-; Гра малює ліву колонку на частку пікселя інакше (31.10: розбіжність до 111 проти 0-35 в інших), тому для неї
-; є окремі еталони sell*c.png; де такого нема, картка після продажу сусідів зсувається в іншу колонку -
-; тому кілька проходів, поки є що продавати.
-SellCards() {
-    static lastLook := 0
-    if cfg["sellCards"] != "1" || A_Min >= Num("sellUntil", 50)   ; рейд скоро - не затримувати
-        return
-    if lastLook && A_TickCount - lastLook < Num("sellEvery", 5) * 60000   ; sellEvery у minилинах, 0 - без паузи (для тесту)
-        return
-    lastLook := A_TickCount
-    cards := ReadCards()
-    if !cards {
-        Log("  sell: card count not read")
-        return
-    }
-    if cards[1] < Num("sellAt", 50)
-        return
-    files := []
-    Loop Files SELLDIR "*.png"
-        if !InStr(" " cfg["sellOff"] " ", " " A_LoopFileName " ")
-            files.Push(A_LoopFileFullPath)
-    if !files.Length {
-        Log("  sell: no card pictures on - add some on the Card selling page (F6 over a card)")
-        return
-    }
-    Log("  card sell: in Bag " cards[1] "/" cards[2] ", templates " files.Length)
-    Loop Min(10, Max(1, Num("sellPasses", 2))) {
-        if !running || A_Min >= Num("sellUntil", 50) || SellPass(files, cards) < 1
-            break
-        cards := ReadCards()
-        if !cards
-            break
-    }
-}
-
-; Один прохід: вибрати збіги від початку списку і продати. Повертає, скільки продано (0 - нічого)
-SellPass(files, cards) {
-    SetStatus("card sell: Mass sell")
-    ClickXY(SELL_TAB_CARDS[1], SELL_TAB_CARDS[2])         ; з відомого стану: спершу Cards, потім Mass sell
-    Sleep 800
-    ClickXY(SELL_TAB[1], SELL_TAB[2])
-    Sleep 1200
-    ParkMouse()
-    Sleep 300
-    if !RegExMatch(OcrRegion(SELL_COUNT_BOX), "i)Select") {
-        Log("  sell: Mass sell window did not open")
-        Screenshot("sell")
-        ClickXY(SELL_TAB_CARDS[1], SELL_TAB_CARDS[2])
-        Sleep 600
-        return 0
-    }
-    SellToTop()
-    picked := 0, lastX := -1, lastY := -1, tries := 0, minX := 0, stall := 0, steps := 0, ticks := 0
-    maxPick := Num("sellMax", 120)
-    t0 := A_TickCount
-    while running && picked < maxPick && A_TickCount - t0 < 200000 && steps < 120 {
-        while running && picked < maxPick && FindSellCard(files, minX, &x, &y) {
-            if x = lastX && y = lastY {                   ; картка ще не позначилась: другий тап зняв би вибір, тому лише чекаємо
-                tries += 1
-                if tries >= 3 {
-                    Log("  sell: card (" x "," y ") is not selected - skipping this column in this pass")
-                    minX := x + 20, tries := 0, lastX := -1, lastY := -1
-                    continue
-                }
-                Sleep 500
-                continue
-            }
-            tries := 0, lastX := x, lastY := y
-            ClickXY(x + 56, y + 56)                       ; еталон 112x112 - у центрі картки
-            picked += 1
-            ParkMouse()                                   ; картка під курсором підсвічена
-            Sleep 350
-        }
-        if picked >= maxPick
-            break
-        b0 := SellBarY()
-        if b0 < 0                                         ; смужки нема - сітка вмістилась, вниз нічого
-            break
-        GridWheel(ticks ? ticks : 1)
-        steps += 1
-        b1 := SellBarY()
-        if b1 = b0 {                                      ; повзунок не зрушив двічі поспіль - кінець списку
-            stall += 1
-            if stall >= 2
-                break
-        } else {
-            stall := 0
-            if !ticks && b1 > b0 {                        ; за першим кроком добираємо оберти: ~3 ряди (430 px) за крок
-                per := (b1 - b0) / (SELL_BAR[4] - SELL_BAR[2] - 20) * Ceil(cards[1] / 5) * 144
-                ticks := Max(1, Min(8, Floor(430 / per)))
-                Log("  sell: wheel turn ~" Round(per) " px, step " ticks)
-            }
-        }
-    }
-    if !picked || !running {
-        if !picked
-            Log("  sell: no matches with templates")
-        SellBack()
-        return 0
-    }
-    sel := RegExMatch(OcrRegion(SELL_COUNT_BOX), "(\d+)", &ms) ? Integer(ms[1]) : 0
-    if cfg["sellDry"] = "1" {                             ; test mode: show what would be sold, press nothing
-        Log("  sell: TEST MODE - selected " picked " cards (in panel " sel "), Sell not pressed")
-        Screenshot("sell")
-        SellBack()
-        return 0
-    }
-    ClickXY(SELL_BTN[1], SELL_BTN[2])
-    Sleep 1000
-    ask := OcrRegion(SELL_ASK_BOX)
-    n := RegExMatch(ask, "i)Sell\s*(\d+)\s*card", &ma) ? Integer(ma[1]) : 0
-    if n < 1 || n > picked {
-        Log("  sell cancelled: confirm window '" Trim(StrReplace(ask, "`n", " ")) "', tapped " picked ", in panel " sel)
-        Screenshot("sell")
-        ClickXY(SELL_NO[1], SELL_NO[2])
-        Sleep 600
-        ClickXY(SELL_CANCEL[1], SELL_CANCEL[2])
-        Sleep 600
-        SellBack()
-        return 0
-    }
-    ClickXY(SELL_YES[1], SELL_YES[2])
-    Sleep 2000
-    if RegExMatch(OcrRegion(SELL_ASK_BOX), "i)Sell\s*\d+\s*card") {   ; вікно не закрилось - Yes не влучив
-        Log("  sell: confirm window still open after Yes - closing with No")
-        Screenshot("sell")
-        ClickXY(SELL_NO[1], SELL_NO[2])
-        Sleep 600
-        ClickXY(SELL_CANCEL[1], SELL_CANCEL[2])
-        Sleep 600
-        SellBack()
-        return 0
-    }
-    after := ReadCards()
-    Log("  sell: tapped " picked ", in window " n ", cards before " cards[1] " after " (after ? after[1] : "?"))
-    Screenshot("sell")
-    SellBack()
-    return n
-}
-
-; F6 over a card in the Mass sell grid: saves a 112x112 picture of it to img\sell\ (the bot then sells cards that look the same).
-; The mouse is moved away first (a card under the cursor is highlighted), then back.
-SellCapture() {
-    MouseGetPos(&mx, &my)
-    x := mx - 56, y := my - 56
-    if x < SELL_GRID[1] || y < SELL_GRID[2] || x + 112 > SELL_GRID[3] || y + 112 > SELL_GRID[4] {
-        Log("  sell: F6 - put the mouse over the middle of a card in Bag > Mass sell")
-        ToolTip("Put the mouse over the middle of a card in Bag > Mass sell, then press F6")
-        SetTimer(() => ToolTip(), -2500)
-        return
-    }
-    ParkMouse()
-    Sleep 350
-    DirCreate SELLDIR
-    name := "mine_" FormatTime(, "yyyyMMdd_HHmmss") ".png"
-    res := SaveRegion(SELLDIR name, x, y, 112, 112)
-    MouseMove mx, my, 0
-    Log(res = 0 ? "  sell: card picture saved: " name : "  sell: card picture not saved (GDI+ code " res ")")
-    ToolTip(res = 0 ? "Card picture saved" : "Card picture NOT saved")
-    SetTimer(() => ToolTip(), -1500)
-    SellFilesChanged()
-}
-
-; назад на вкладку Cards, щоб Bag лишився в звичному стані
-SellBack() {
-    ClickXY(SELL_TAB_CARDS[1], SELL_TAB_CARDS[2])
-    Sleep 600
-    ParkMouse()
 }
 
 ; Меню режимів відкрите, а loadout ще не той (бота перезапустили з відкритим меню - 28.10 19:12 Speed Raid

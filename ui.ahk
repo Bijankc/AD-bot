@@ -5,7 +5,7 @@
 ; If a font is not installed, put its .ttf files into the fonts\ folder next to the script, else Segoe UI / Consolas is used.
 
 LOGO_T := 52, LOGO_S := LOGO_T / 100          ; logo tile size in px and its scale
-APP_VERSION := "0.1.5"                   ; shown under the title
+APP_VERSION := "0.1.8"                   ; shown under the title
 APP_AUTHOR  := "Samogub"                 ; shown next to the version
 
 ; ------------------------------ themes ------------------------------
@@ -68,7 +68,6 @@ GdipInit()
 if !InStr(RAIDS_READY, " " cfg["raidName"] " ")           ; only tested features are active in the public build
     cfg["raidName"] := "divine"
 statsArm := 0                                          ; tick of the first click on "Reset statistics"
-sellFiles := [], sellFilesAt := 0, pngCache := Map()    ; card pictures of the Card selling page
 gr := 0                                  ; GDI+ graphics of the frame being drawn
 hits := []                               ; clickable rectangles of the last frame
 hoverId := ""
@@ -81,7 +80,7 @@ uiLog := []                              ; last log lines shown in the bottom pa
 dRaid := "", dSpeed := "", dGoal := "", dDone := ""
 layoutMons := 0
 curPage := IniRead(INI, "ui", "page", "home")
-if !InStr(" home modes m_raid m_speed m_inf m_sell skills stats look ", " " curPage " ")
+if !InStr(" home modes m_raid m_speed m_inf skills stats look ", " " curPage " ")
     curPage := "home"
 
 g := Gui("+AlwaysOnTop -Caption", "AD Bot")
@@ -650,7 +649,6 @@ UiRender(force := false) {
         case "m_raid":  PageRaid()
         case "m_speed": PageSpeed()
         case "m_inf":   PageInfinity()
-        case "m_sell":  PageSell()
         case "skills": PageSkills()
         case "stats":  PageStats()
         case "look":   PageLook()
@@ -1019,13 +1017,6 @@ ModeCard(x, y, w, h, title, desc, key, page, btnText := "Settings", soon := fals
     hot := IsHot("mc_" title)
     Glass(x, y, w, h, 18, hot)
     Tx(title, "title", 16, 1, C.text, x + 20, y + 9, w - 110, 26)
-    if title = "Card selling" {
-        nx := x + 20 + TxW(title, "title", 16, 1) + 26, nw := TxW("NEW", "ui", 11, 1)
-        Loop 6   ; violet aura left and right of the label
-            FillRR(nx - 3 * A_Index - 2, y + 12 - A_Index, nw + 6 * A_Index + 4, 18 + 2 * A_Index, 9 + A_Index, "A78BFA", 16)
-        Tx("NEW", "ui", 11, 1, "FFFFFF", nx, y + 13, nw + 4, 18)
-        Tx("Sells Infinity cards only for now", "ui", 11, 0, C.hi, x + 150, y + h - 29, w - 170, 22)
-    }
     TxP(desc, "ui", 11, C.dim, x + 20, y + 35, w - 40, 30)
     if page != ""
         Hit(x, y, w, h, "mc_" title, SetPage.Bind(page))
@@ -1042,17 +1033,16 @@ ModeCard(x, y, w, h, title, desc, key, page, btnText := "Settings", soon := fals
 }
 
 PageModes() {
-    cw2 := (CWD - 12) // 2, ch := (CHT - 36) // 4
+    cw2 := (CWD - 12) // 2, ch := (CHT - 24) // 3
     cards := [["Raid", "Enters the raid at the start of every hour. Choose the raid and how the fight is played.", "raid", "m_raid"],
               ["Speed Raid", "Every 30 min with the lowest unused character. Needs loadout 3 if loadouts are on.", "speed", "m_speed"],
               ["Infinity", "Farms waves while the raid is closed. Choose how the character fights.", "infinity", "m_inf"],
-              ["Card selling", "Mass-sells the cards you pick when the Bag is nearly full. You choose when and how many.", "sellCards", "m_sell"],
               ["Loadouts", "Switches the Bag loadout: raid 1, Infinity 2, Speed Raid 3. Set your loadouts first.", "loadouts", ""],
               ["Skills and combo", "Which skills each character uses, and which skill starts the combo.", "", "skills"],
               ["Dungeons", "Runs dungeons between the raids. Not ready yet: the mode is being prepared.", "", "", "Settings", true]]
     for i, mc in cards {   ; not "c": it would shadow the global theme object C
         col := Mod(i - 1, 2), row := (i - 1) // 2
-        ModeCard(CX + col * (cw2 + 12), CY + row * (ch + 12), i = cards.Length && Mod(i, 2) ? CWD : cw2, ch, mc[1], mc[2], mc[3], mc[4], mc[4] = "skills" ? "Open" : "Settings", mc.Length > 4)
+        ModeCard(CX + col * (cw2 + 12), CY + row * (ch + 12), cw2, ch, mc[1], mc[2], mc[3], mc[4], mc[4] = "skills" ? "Open" : "Settings", mc.Length > 4)
     }
 }
 
@@ -1117,89 +1107,7 @@ PageInfinity() {
             ChipOff(CX + 20 + (i - 1) * (cw + 8), py2 + 36, cw, 30, StrUpper(k))
     TxP("Blue skills are the big area attacks. The bot presses them one at a time with a pause, so their effects do not overlap. All other skills are pressed as soon as they are ready.", "ui", 12, C.dim, CX + 20, py2 + 72, CWD - 40, 40)
 }
-PageSell() {
-    BackBar("Card selling", "Runs after each raid, when the Bag is nearly full")
-    py := CY + 46, lw := 430, rx := CX + lw + 12, rw := CWD - lw - 12
-    Panel(CX, py, lw, CHT - 46, "When and how much")
-    ToggleRow(CX + 16, py + 36, lw - 32, "Sell cards", "Uses the Mass sell tab in the Bag", "sellCards")
-    Stepper(CX + 20, py + 88, lw - 40, "Sell when Bag has at least", "sellAt", 10, 50, 500, 1, "", 50, "Start when Bag has this many")
-    Stepper(CX + 20, py + 132, lw - 40, "Cards sold per run", "sellMax", 10, 10, 300, 1, "", 120, "Max cards sold in one run")
-    Stepper(CX + 20, py + 176, lw - 40, "Pause between runs", "sellEvery", 1, 0, 120, 1, "min", 5, "Wait before selling again")
-    Stepper(CX + 20, py + 220, lw - 40, "Do not sell after minute", "sellUntil", 5, 10, 60, 1, "", 50, "Stop late in the hour: raid soon")
-    Stepper(CX + 20, py + 264, lw - 40, "Selling rounds per run", "sellPasses", 1, 1, 10, 1, "", 2, "Repeats: sold cards shift others")
-    ToggleRow(CX + 16, py + 308, lw - 32, "Test mode", "Selects the cards but does not press Sell", "sellDry")
-    Panel(rx, py, rw, CHT - 46, "Cards to sell")
-    list := SellList(), n := Min(list.Length, 15), onN := 0
-    Loop n {
-        name := list[A_Index], off := InStr(" " cfg["sellOff"] " ", " " name " ")
-        bx := rx + 16 + Mod(A_Index - 1, 5) * 56, by := py + 44 + ((A_Index - 1) // 5) * 56
-        DrawPng(SELLDIR name, bx, by, 48, 48)
-        if off
-            FillRR(bx, by, 48, 48, 6, C.bg, 175)
-        else
-            StrokeRR(bx, by, 48, 48, 6, C.hi, 230), onN++
-        Hit(bx, by, 48, 48, "sp_" name, SellToggleFile.Bind(name))
-        FillRR(bx + 32, by, 16, 16, 5, C.bg, 220)
-        Tx("x", "ui", 11, 1, IsHot("sx_" name) ? C.hi : C.text, bx + 32, by, 16, 16, 1)
-        Hit(bx + 32, by, 16, 16, "sx_" name, SellDelete.Bind(name))
-    }
-    for name in list
-        if A_Index > 15 && !InStr(" " cfg["sellOff"] " ", " " name " ")
-            onN++
-    Tx(list.Length = 0 ? "No pictures yet: nothing will be sold" : onN " of " list.Length " pictures on" (list.Length > 15 ? " (first 15 shown)" : ""), "ui", 12, 0, onN ? C.dim : C.hi, rx + 16, py + 216, rw - 32, 20)
-    TxP("Bag > Mass sell: hold the mouse over a card you want to sell and press F6. Add each card type once (also one from the left column). Click a picture = on/off, x = delete.", "ui", 11, C.dim, rx + 16, py + 242, rw - 32, 62)
-    Btn(rx + 16, py + 312, rw - 32, 34, "Open pictures folder", "sellfolder", OpenPath.Bind(SELLDIR))
-}
 
-; ---- card pictures: img\sell\*.png (made with F6 in the Bag, see SellCapture) ----
-SellFilesChanged() {
-    global sellFilesAt
-    sellFilesAt := 0
-}
-
-SellList() {
-    global sellFiles, sellFilesAt
-    if A_TickCount - sellFilesAt > 1500 {
-        sellFiles := [], sellFilesAt := A_TickCount
-        Loop Files SELLDIR "mine_*.png"                   ; your own pictures first
-            sellFiles.Push(A_LoopFileName)
-        Loop Files SELLDIR "*.png"
-            if InStr(A_LoopFileName, "mine_") != 1
-                sellFiles.Push(A_LoopFileName)
-    }
-    return sellFiles
-}
-
-; PNG from a file, scaled into (x, y, w, h); loaded once
-DrawPng(file, x, y, w, h) {
-    global pngCache
-    if !pngCache.Has(file) {
-        DllCall("gdiplus\GdipCreateBitmapFromFile", "wstr", file, "ptr*", &bmp := 0)
-        pngCache[file] := bmp
-    }
-    if pngCache[file]
-        DllCall("gdiplus\GdipDrawImageRectI", "ptr", gr, "ptr", pngCache[file], "int", x, "int", y, "int", w, "int", h)
-}
-
-SellToggleFile(name) {
-    off := " " cfg["sellOff"] " "
-    off := InStr(off, " " name " ") ? StrReplace(off, " " name " ", " ") : off name " "
-    cfg["sellOff"] := Trim(RegExReplace(off, "\s+", " "))
-    IniWrite cfg["sellOff"], INI, "raid", "sellOff"
-    Log("setting card picture " name " " (InStr(" " cfg["sellOff"] " ", " " name " ") ? "off" : "on"))
-}
-
-SellDelete(name) {
-    global pngCache
-    f := SELLDIR name
-    if pngCache.Has(f) {                                  ; GDI+ keeps the file open until the image is disposed
-        DllCall("gdiplus\GdipDisposeImage", "ptr", pngCache[f])
-        pngCache.Delete(f)
-    }
-    try FileDelete f
-    Log("card picture deleted: " name)
-    SellFilesChanged()
-}
 PageSkills() {
     nk := SKILL_KEYS.Length
     cw := (CWD - 40 - (nk - 1) * 8) // nk
