@@ -5,7 +5,7 @@
 ; If a font is not installed, put its .ttf files into the fonts\ folder next to the script, else Segoe UI / Consolas is used.
 
 LOGO_T := 52, LOGO_S := LOGO_T / 100          ; logo tile size in px and its scale
-APP_VERSION := "0.1.8"                   ; shown under the title
+APP_VERSION := "0.2.7"                   ; shown under the title
 APP_AUTHOR  := "Samogub"                 ; shown next to the version
 
 ; ------------------------------ themes ------------------------------
@@ -80,7 +80,7 @@ uiLog := []                              ; last log lines shown in the bottom pa
 dRaid := "", dSpeed := "", dGoal := "", dDone := ""
 layoutMons := 0
 curPage := IniRead(INI, "ui", "page", "home")
-if !InStr(" home modes m_raid m_speed m_inf skills stats look ", " " curPage " ")
+if !InStr(" home modes m_raid m_speed m_inf stats look ", " " curPage " ")
     curPage := "home"
 
 g := Gui("+AlwaysOnTop -Caption", "AD Bot")
@@ -138,29 +138,29 @@ UiLogPush(text) {
     UiInvalidate()
 }
 
-; the window must not cover the game: second monitor -> there; one monitor -> big window only while stopped
+; while the bot runs: only the hotbar on the game screen, also with two monitors (the big window there was in the way);
+; stopped: the big window, on the second monitor if there is one
 Layout() {
     global layoutMons
     layoutMons := MonitorGetCount()
-    prim := MonitorGetPrimary()
-    Loop layoutMons {
-        if A_Index = prim
-            continue
-        MonitorGetWorkArea(A_Index, &l, &t, &r, &b)
-        mini.Hide()
-        g.Show("x" (l + (r - l - PW) // 2) " y" (t + (b - t - PH) // 2) " NoActivate")
-        return
-    }
     if running {
         g.Hide()
         mini.Show("x0 y24 AutoSize NoActivate")
         mini.GetPos(, , &mw, &mh)
         mini.Move((A_ScreenWidth - mw) // 2, 24)
         DllCall("SetWindowRgn", "ptr", mini.Hwnd, "ptr", DllCall("CreateRoundRectRgn", "int", 0, "int", 0, "int", mw + 1, "int", mh + 1, "int", 16, "int", 16, "ptr"), "int", 1)
-    } else {
-        mini.Hide()
-        g.Show("x" ((A_ScreenWidth - PW) // 2) " y" ((A_ScreenHeight - PH) // 2) " NoActivate")
+        return
     }
+    mini.Hide()
+    prim := MonitorGetPrimary()
+    Loop layoutMons {
+        if A_Index = prim
+            continue
+        MonitorGetWorkArea(A_Index, &l, &t, &r, &b)
+        g.Show("x" (l + (r - l - PW) // 2) " y" (t + (b - t - PH) // 2) " NoActivate")
+        return
+    }
+    g.Show("x" ((A_ScreenWidth - PW) // 2) " y" ((A_ScreenHeight - PH) // 2) " NoActivate")
 }
 
 StarTick() {
@@ -288,11 +288,6 @@ FlipKey(key) {
     cfg[key] := cfg[key] = "1" ? "0" : "1"
     IniWrite cfg[key], INI, "raid", key
     Log("setting " key " = " cfg[key] " (applies at once)")
-    if key = "infStand" && cfg[key] = "1"                  ; standing still: no turning or walking
-        for k in ["turn", "patrol"] {
-            cfg[k] := "0"
-            IniWrite "0", INI, "raid", k
-        }
 }
 
 PickRaid(key) {
@@ -301,45 +296,6 @@ PickRaid(key) {
     cfg["raidName"] := key
     IniWrite key, INI, "raid", "raidName"
     Log("setting raid = " RAIDS[key][3] " (applies at once)")
-}
-
-ToggleSkill(k) {
-    off := []
-    for s in StrSplit(Trim(cfg["skillsOff"]), " ")
-        if s != "" && s != k
-            off.Push(s)
-    if SkillOn(k)
-        off.Push(k)
-    list := ""
-    for s in off
-        list .= (list = "" ? "" : " ") s
-    cfg["skillsOff"] := list
-    IniWrite list, INI, "raid", "skillsOff"
-    Log("setting skill " k (SkillOn(k) ? " on" : " off") " (applies at once)")
-}
-
-PickCombo(k) {
-    if k = "off" {
-        cfg["combo"] := "0"
-    } else {
-        cfg["combo"] := "1"
-        cfg["comboKey"] := k
-        IniWrite k, INI, "raid", "comboKey"
-    }
-    IniWrite cfg["combo"], INI, "raid", "combo"
-    Log("setting combo trigger = " (k = "off" ? "none" : k) " (applies at once)")
-}
-
-PickHold(k) {
-    cfg["comboSpam"] := k
-    IniWrite k, INI, "raid", "comboSpam"
-    Log("setting combo hold key = " k " (applies at once)")
-}
-
-StepHold(d) {
-    ms := Min(10000, Max(500, Num("comboMs", 3000) + d))
-    cfg["comboMs"] := String(ms)
-    IniWrite ms, INI, "raid", "comboMs"
 }
 
 OpenPath(p) {
@@ -649,7 +605,6 @@ UiRender(force := false) {
         case "m_raid":  PageRaid()
         case "m_speed": PageSpeed()
         case "m_inf":   PageInfinity()
-        case "skills": PageSkills()
         case "stats":  PageStats()
         case "look":   PageLook()
         default:       PageHome()
@@ -790,7 +745,7 @@ DrawTopbar() {
 
 DrawSidebar() {
     Glass(16, 76, 190, GH - 92)
-    items := [["home", "Dashboard", 0xE80F], ["modes", "Modes", 0xE713], ["skills", "Skills", 0xE945],
+    items := [["home", "Dashboard", 0xE80F], ["modes", "Modes", 0xE713],
               ["stats", "Statistics", 0xE9D2], ["look", "Appearance", 0xE790], ["setup", "Setup check", 0xE9D9]]
     y := 92
     for it in items {
@@ -863,8 +818,7 @@ DrawSetup() {
     tips := ["Graphics quality: set it to the lowest (Esc > Settings in Roblox).",
              "Turn off visual effects and extra animations in the game settings: they hide the colours the bot reads.",
              "Keep Roblox in a window on your main monitor (not F11). Do not resize it: the bot sets the size.",
-             "Loadouts: 1 for raids, 2 for Infinity, 3 for Speed Raid - or turn Loadouts off in Modes.",
-             "Set Mouse sensitivity in Modes > Raid to the same value as in Roblox settings. Do not use the PC while the bot runs."]
+             "Loadouts: 1 for raids, 2 for Infinity, 3 for Speed Raid - or turn Loadouts off in Modes."]
     ty := y + 122
     for t in tips {
         Dot(x + 490, ty + 6, 8, C.hi)
@@ -1021,7 +975,7 @@ ModeCard(x, y, w, h, title, desc, key, page, btnText := "Settings", soon := fals
     if page != ""
         Hit(x, y, w, h, "mc_" title, SetPage.Bind(page))
     if soon
-        Tx("Coming soon", "ui", 11, 1, C.hi, x + w - 130, y + 9, 110, 26, 2)
+        Tx(soon = true ? "Coming soon" : soon, "ui", 11, 1, C.hi, x + w - 230, y + 9, 210, 26, 2)
     else if key != "" {
         on := cfg[key] = "1"
         DrawSwitch(x + w - 66, y + 9, on)
@@ -1033,16 +987,14 @@ ModeCard(x, y, w, h, title, desc, key, page, btnText := "Settings", soon := fals
 }
 
 PageModes() {
-    cw2 := (CWD - 12) // 2, ch := (CHT - 24) // 3
-    cards := [["Raid", "Enters the raid at the start of every hour. Choose the raid and how the fight is played.", "raid", "m_raid"],
+    cw2 := (CWD - 12) // 2, ch := (CHT - 12) // 2
+    cards := [["Raid", "Enters the raid at the start of every hour. The game's Auto button fights; choose the raid and the start options.", "raid", "m_raid"],
               ["Speed Raid", "Every 30 min with the lowest unused character. Needs loadout 3 if loadouts are on.", "speed", "m_speed"],
-              ["Infinity", "Farms waves while the raid is closed. Choose how the character fights.", "infinity", "m_inf"],
-              ["Loadouts", "Switches the Bag loadout: raid 1, Infinity 2, Speed Raid 3. Set your loadouts first.", "loadouts", ""],
-              ["Skills and combo", "Which skills each character uses, and which skill starts the combo.", "", "skills"],
-              ["Dungeons", "Runs dungeons between the raids. Not ready yet: the mode is being prepared.", "", "", "Settings", true]]
+              ["Infinity", "Farms waves while the raid is closed. The character stands still and uses the big AOE skills.", "infinity", "m_inf"],
+              ["Loadouts", "Switches the Bag loadout: raid 1, Infinity 2, Speed Raid 3. Set your loadouts first.", "loadouts", ""]]
     for i, mc in cards {   ; not "c": it would shadow the global theme object C
         col := Mod(i - 1, 2), row := (i - 1) // 2
-        ModeCard(CX + col * (cw2 + 12), CY + row * (ch + 12), cw2, ch, mc[1], mc[2], mc[3], mc[4], mc[4] = "skills" ? "Open" : "Settings", mc.Length > 4)
+        ModeCard(CX + col * (cw2 + 12), CY + row * (ch + 12), cw2, ch, mc[1], mc[2], mc[3], mc[4], "Settings", false)
     }
 }
 
@@ -1059,45 +1011,37 @@ PageRaid() {
     }
     TxP("Coming soon: " soon, "ui", 11, C.idle, CX + 20 + cw3 + 16, py + 38, CWD - 40 - cw3 - 16, 36)
     py2 := py + 92
-    Panel(CX, py2, CWD, CHT - 46 - 92, "How the fight is played")
+    Panel(CX, py2, CWD, 150, "Raid settings")
     colw := (CWD - 40 - 24) // 2
-    ToggleRow(CX + 20, py2 + 38, colw, "Solo mode (Friends Only)", "Nobody can join, so Start is pressed at once", "soloRaid")
-    ToggleRow(CX + 20, py2 + 86, colw, "Reset characters without skill 5", SkillOn("5") ? "Reset until a character with skill 5 comes" : "Locked: skill 5 is turned off", "resetNo5", !SkillOn("5"))
-    ToggleRow(CX + 20, py2 + 134, colw, "Reset the 3rd character", "Even if it has skill 5", "resetThird")
-    Stepper(CX + 20, py2 + 188, colw, "Mouse sensitivity", "camSens", 1, 1, 200, 100, "", 36, "As in the Roblox settings")
-    rx := CX + 20 + colw + 24
     solo := cfg["soloRaid"] = "1"
-    Stepper(rx, py2 + 38, colw, "Walk to the boss", "raidWalk", 500, 0, 8000, 1000, "s", 3000)
-    Stepper(rx, py2 + 84, colw, "PARTY wait before Start", "startDelay", 1, 0, 30, 1, "s", 10, "Needs Friends Only off", solo)
-    Stepper(rx, py2 + 130, colw, "Early start at bonus", "startBonus", 10, 0, 300, 1, "%", 110, "Needs Friends Only off", solo)
-    Stepper(rx, py2 + 176, colw, "Camera turn", "respawnTurn", 5, 35, 155, 1, "°", 95, "If the boss is not ahead")
+    ToggleRow(CX + 20, py2 + 38, colw, "Solo mode (Friends Only)", "Nobody can join, so Start is pressed at once", "soloRaid")
+    TxP("The game's Auto button does the fighting in the raid: the bot only keeps it on and waits for the end.", "ui", 11, C.dim, CX + 20, py2 + 92, colw, 40)
+    rx := CX + 20 + colw + 24
+    Stepper(rx, py2 + 38, colw, "PARTY wait before Start", "startDelay", 1, 0, 30, 1, "s", 10, "Needs Friends Only off", solo)
+    Stepper(rx, py2 + 84, colw, "Early start at bonus", "startBonus", 10, 0, 300, 1, "%", 110, "Needs Friends Only off", solo)
 }
 PageSpeed() {
     BackBar("Speed Raid", "A short raid with one character, available every 30 minutes")
     Panel(CX, CY + 46, CWD, 244, "How it works")
-    TxP("Every 30 minutes the bot opens the modes menu, picks Speed Raid and the lowest character that has not been used this week (used characters are dimmed).`n`nThere is no combo: the bot opens with E R X Z and then presses 5 4 3 2 1 as they come off cooldown.`n`nSpeed Raid has priority over Infinity but not over the hourly raid. It is not started in the last 8 minutes of the hour.`n`nSpeed Raid resets once a week and used characters become free again. The author recommends running it on weekends, when the rewards are x2. When all characters are used, the bot waits for the weekly reset and then continues.", "ui", 13, C.text, CX + 20, CY + 90, CWD - 40, 196)
+    TxP("Every 30 minutes the bot opens the modes menu, picks Speed Raid and the lowest character that has not been used this week (used characters are dimmed).`n`nThe game's Auto button does the fighting: the bot only keeps it on until the run ends.`n`nSpeed Raid has priority over Infinity but not over the hourly raid. It is not started in the last 8 minutes of the hour.`n`nSpeed Raid resets once a week and used characters become free again. The author recommends running it on weekends, when the rewards are x2. When all characters are used, the bot waits for the weekly reset and then continues.", "ui", 13, C.text, CX + 20, CY + 90, CWD - 40, 196)
     Panel(CX, CY + 302, CWD, CHT - 302, "Settings")
     ToggleRow(CX + 20, CY + 344, (CWD - 40 - 24) // 2, "Speed Raid enabled", "Turn it off to skip Speed Raid completely", "speed")
-    ToggleRow(CX + 20 + (CWD - 40 - 24) // 2 + 24, CY + 344, (CWD - 40 - 24) // 2, "Switch loadout", "Speed Raid uses loadout 3 when this is on", "loadouts")
+    ToggleRow(CX + 20 + (CWD - 40 - 24) // 2 + 24, CY + 344, (CWD - 40 - 24) // 2, "Switch loadout", "All modes: raid 1, Infinity 2, Speed Raid 3", "loadouts")
 }
 
 PageInfinity() {
     BackBar("Infinity", "Focus on big, long AOE skills - not the game's Auto Play")
     py := CY + 46
-    Panel(CX, py, CWD, 232, "How the character fights")
+    Panel(CX, py, CWD, 200, "How the character fights")
     Tx("Infinity keeps its focus for late-end game", "ui", 11, 0, C.dim, CX + 20 + TxW("How the character fights", "title", 15, 1) + 14, py + 14, 320, 24)
     colw := (CWD - 40 - 24) // 2
-    still := cfg["infStand"] = "1"
-    ToggleRow(CX + 20, py + 38, colw, "Stand still", "No walking or turning, only skills", "infStand")
-    ToggleRow(CX + 20, py + 84, colw, "Turn towards enemies", still ? "Locked while Stand still is on" : "Turns the camera to the nearest enemy", "turn", still)
-    ToggleRow(CX + 20, py + 130, colw, "Walk forward now and then", still ? "Locked while Stand still is on" : "Short walks to find new enemies", "patrol", still)
+    TxP("The character stands still: enemies walk into the big AOE skills, all other skills are pressed as soon as they are ready.", "ui", 12, C.dim, CX + 20, py + 44, colw, 80)
     rx := CX + 20 + colw + 24
     TimeStepper(rx, py + 40, colw, "Leave Infinity at", "infStop", 30, 600, 3480, 57 * 60 + 30, "Author recommends 57:30")
     Stepper(rx, py + 92, colw, "Pause between AOE", "spreadMs", 500, 1000, 20000, 1000, "s", 7000, "Author recommends 7 s", false)
-    Stepper(rx, py + 144, colw, "Turn every", "turnMs", 500, 500, 10000, 1000, "s", 2500, "", still)
-    Stepper(rx, py + 190, colw, "Auto if enemies stuck", "infAuto", 5000, 0, 60000, 1000, "s", 15000, "AUTO for 5 s; 0 = off")
-    py2 := py + 242
-    Panel(CX, py2, CWD, CHT - 46 - 242, "Big AOE skills")
+    Stepper(rx, py + 144, colw, "Auto if enemies stuck", "infAuto", 5000, 0, 60000, 1000, "s", 15000, "AUTO for 5 s; 0 = off")
+    py2 := py + 210
+    Panel(CX, py2, CWD, CHT - 46 - 210, "Big AOE skills")
     nk := SKILL_KEYS.Length
     cw := (CWD - 40 - (nk - 1) * 8) // nk
     for i, k in SKILL_KEYS
@@ -1106,40 +1050,6 @@ PageInfinity() {
         else
             ChipOff(CX + 20 + (i - 1) * (cw + 8), py2 + 36, cw, 30, StrUpper(k))
     TxP("Blue skills are the big area attacks. The bot presses them one at a time with a pause, so their effects do not overlap. All other skills are pressed as soon as they are ready.", "ui", 12, C.dim, CX + 20, py2 + 72, CWD - 40, 40)
-}
-
-PageSkills() {
-    nk := SKILL_KEYS.Length
-    cw := (CWD - 40 - (nk - 1) * 8) // nk
-    Panel(CX, CY, CWD, 144, "Skills the bot presses")
-    for i, k in SKILL_KEYS
-        Chip(CX + 20 + (i - 1) * (cw + 8), CY + 48, cw, 44, StrUpper(k), SkillOn(k), "sk_" k, ToggleSkill.Bind(k))
-    TxP("Blue = pressed. A skill your character does not have is detected automatically (it never goes on cooldown, so after 3 tries the bot skips it for 20 s). Turn a skill off here if no character should use it. In raids, characters without skill 5 are reset - see Modes > Raid.", "ui", 11, C.dim, CX + 20, CY + 96, CWD - 40, 40)
-    py := CY + 156
-    Panel(CX, py, CWD, CHT - 156, "Combo")
-    cw2 := (CWD - 40 - nk * 8) // (nk + 1)
-    Caption("1. After this skill is pressed...", CX + 20, py + 46, 400)
-    for i, k in SKILL_KEYS
-        Chip(CX + 20 + (i - 1) * (cw2 + 8), py + 66, cw2, 40, StrUpper(k), cfg["combo"] = "1" && cfg["comboKey"] = k, "cb_" k, PickCombo.Bind(k))
-    Chip(CX + 20 + nk * (cw2 + 8), py + 66, cw2, 40, "OFF", cfg["combo"] != "1", "cb_off", PickCombo.Bind("off"))
-    Caption("2. ...hold this key", CX + 20, py + 120, 300)
-    comboOn := cfg["combo"] = "1"
-    for i, k in ["1", "2", "3", "4"]
-        if comboOn
-            Chip(CX + 20 + (i - 1) * (cw2 + 8), py + 140, cw2, 40, k, cfg["comboSpam"] = k, "hd_" k, PickHold.Bind(k))
-        else
-            ChipOff(CX + 20 + (i - 1) * (cw2 + 8), py + 140, cw2, 40, k)
-    Caption("3. ...for", CX + 20 + 4 * (cw2 + 8) + 24, py + 120, 200)
-    sx := CX + 20 + 4 * (cw2 + 8) + 24
-    if comboOn {
-        Chip(sx, py + 140, 40, 40, "-", false, "ms_dn", StepHold.Bind(-500))
-        Chip(sx + 138, py + 140, 40, 40, "+", false, "ms_up", StepHold.Bind(500))
-    } else {
-        ChipOff(sx, py + 140, 40, 40, "-")
-        ChipOff(sx + 138, py + 140, 40, 40, "+")
-    }
-    Tx(Format("{:.1f} s", Num("comboMs", 3000) / 1000), "mono", 16, 1, comboOn ? C.text : C.idle, sx + 44, py + 140, 90, 40, 1)
-    Tx("Used only in raids that show a Combo counter. Skill order and timings: raid.ini", "ui", 11, 0, C.dim, CX + 20, py + CHT - 156 - 30, CWD - 40, 18)
 }
 
 PageStats() {

@@ -86,6 +86,10 @@ TURN_TAP  := 150                       ; скільки ms тримати кла
 ; кнопці там фон, на плямі - той самий колір. Точки пораховані з еталонів (зсув від лівого верхнього кута).
 BORDER := Map(
     "play.png", ["white", [[5,5],[53,5],[125,5],[173,5],[5,11],[44,14],[95,17],[92,20],[5,26],[65,29],[140,32],[35,38],[158,41],[5,47],[47,50],[83,50]]],
+    ; raid_mode.png = letter cores of raid_mode_2.png (same box): the cards pulse, the full letters matched only at one size (3.11 23:57)
+    "raid_mode.png", ["white", [[2,2],[131,2],[50,5],[5,8],[5,11],[8,14],[80,17],[119,20],[143,23],[8,29],[2,35],[2,38],[137,38],[23,41],[56,41],[89,41]]],
+    ; the modes cards pulse: dimension_2 / speed_mode_2 = letter cores (2 px of every edge cut), same box as the full template (4.11)
+    "speed_mode.png", ["white", [[2,2],[86,2],[170,2],[254,2],[56,5],[140,5],[224,5],[158,8],[281,11],[161,20],[257,26],[278,35],[140,41],[32,44],[116,44],[200,44]]],
     "dimension.png", ["white", [[5,8],[86,8],[152,8],[221,8],[95,11],[125,14],[188,17],[188,20],[26,26],[116,29],[140,32],[236,35],[209,38],[56,41],[128,41],[197,41]]],
     "enemies_left.png", ["red", [[12,2],[51,11],[14,12],[27,12],[40,12],[3,13],[16,13],[29,13],[42,13],[17,14],[16,16],[11,18],[16,19],[34,20],[32,22],[18,23]]])
 ; хрестики відомих вікон гри: Update Logs, вікно Join/Create, меню режимів (PLAY)
@@ -152,7 +156,9 @@ rdResetCombo := 0        ; ресетів без Combo за забіг
 lastNo5Reset := 0        ; коли востаннє ресетили персонажа без скіла 5
 no5Pending   := false    ; портрет змінився після респавну, вже обробленого по відліку: скіли нового персонажа ще треба перевірити
 lastLoadoutWarn := 0     ; коли востаннє писали УВАГА про рейд без loadout 1
-sess := Map("raids", 0, "infRuns", 0, "raidGems", 0, "raidTokens", 0)   ; підсумок поточного запуску бота
+sessStart := 0           ; tick of the bot start (for the session length in the RUN SUMMARY line)
+pickFails := 0, pickFailHour := "", pickMissAt := 0   ; PickRaidByName: misses of this hour's raid (reset in Start)
+sess := Map("raids", 0, "raidGems", 0, "raidTokens", 0, "speedRuns", 0, "speedGems", 0, "speedTokens", 0, "infRuns", 0, "restarts", 0)   ; підсумок поточного запуску бота
 FIGHT_STICKY := 15000    ; скільки ms після цього ще битися, якщо екран не розпізнано
 lastReset  := 0          ; коли востаннє робили Esc-R-Enter
 lastTurn   := 0          ; коли востаннє розвертались
@@ -231,10 +237,14 @@ cfg := Map(
     ; 161 с без ударів. З 3000 така помилка коштує менше, тож лишаємо 3000)
     "respawnWalk", IniRead(INI, "raid", "respawnWalk", "3000"), ; потім іти вперед до боса, ms (0 = не йти)
     "respawnTurn", IniRead(INI, "raid", "respawnTurn", "95"),   ; якщо бос не прямо попереду - повернути камеру, градусів (+ вправо)
+    "bossAuto",   IniRead(INI, "raid", "bossAuto", "1"),         ; Raid / Speed Raid: the game's Auto fights, the bot only keeps it on (0 = old fight logic)
+    "speedWalk",  IniRead(INI, "raid", "speedWalk", "2000"),    ; Speed Raid: walk to the boss at the start, ms
+    "respawnWalkOther", IniRead(INI, "raid", "respawnWalkOther", "0"),   ; raids without knockback: walk after respawn, ms
+    "noComboReset", IniRead(INI, "raid", "noComboReset", "12000"),       ; Divine: no Combo this long -> reset, ms (0 = off)
     "farWalk",    IniRead(INI, "raid", "farWalk", "2500"),      ; Divine: після 1/2 немає Combo -> вперед стільки ms with Q x3 (0 = вимк.)
     "soloRaid",   IniRead(INI, "raid", "soloRaid", "1"),        ; рейд: вмикати Friends Only (соло, без інших гравців)
     "loadouts",   IniRead(INI, "raid", "loadouts", "0"),     ; міняти loadout: рейд - 1, Infinity - 2, Speed Raid - 3
-    "speed",      IniRead(INI, "raid", "speed", "1"),           ; Speed Raid раз на 30 min (пріоритет: рейд > speed > Infinity)
+    "speed",      IniRead(INI, "raid", "speed", "1"),          ; Speed Raid раз на 30 min (пріоритет: рейд > speed > Infinity)
     "seekAfter",  IniRead(INI, "raid", "seekAfter", "5000"),    ; скільки ms без влучань, щоб почати пошук
     "camSens",    IniRead(INI, "raid", "camSens", "36"),          ; чутливість миші в грі x100 (0.36 -> 36): від неї залежить, на скільки px вести мишу для повороту камери
     "autoAfter",  IniRead(INI, "raid", "autoAfter", "0"),         ; рейд: стільки ms без Combo -> Auto (за замовчуванням вимкнено; детектор Combo бачить і AOE здалека)
@@ -252,6 +262,8 @@ cfg := Map(
     "fightOnly",  "0")                                            ; тест: лише скіли (не зберігається)
 ; що бот востаннє створив ("raid" / "infinity") і в яку годину був рейд - щоб пам'ятати після перезапуску
 lastEntered := IniRead(INI, "state", "lastEntered", "")
+if !InStr(" raid infinity speed ", " " lastEntered " ")      ; an old raid.ini may hold the removed "dungeon"
+    lastEntered := ""
 speedDue := IniRead(INI, "state", "speedDue", "")
 try DateDiff(speedDue, A_Now, "Seconds")                  ; a corrupt value would throw on every tick
 catch
@@ -264,6 +276,8 @@ if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: ли�
 
 ; ------------------------- Interface (see ui.ahk) -------------------------
 #Include ui.ahk
+#Include auto_boss.ahk
+#Include rewards.ahk
 
 if A_Args.Length                                        ; "start" or "fight" - start at once, without F1
     Start()
@@ -272,7 +286,7 @@ F1:: Start()
 F2:: Stop()
 F3:: RestartBot()
 
-SkillOn(key) => !InStr(" " cfg["skillsOff"] " ", " " key " ")
+SkillOn(key) => true                       ; v0.3: усі скіли завжди активні (skillsOff ігнорується)
 
 RaidTitle() => RAIDS.Has(cfg["raidName"]) ? RAIDS[cfg["raidName"]][3] : "raid"
 
@@ -290,7 +304,7 @@ Stat(name, n := 1) {
     today := FormatTime(, "yyyyMMdd")
     if IniRead(INI, "stats", "day", "") != today {
         IniWrite today, INI, "stats", "day"
-        for k in ["infRuns", "raids", "deaths", "raidGems", "raidTokens", "restarts", "speedRuns"]
+        for k in ["infRuns", "raids", "deaths", "raidGems", "raidTokens", "restarts", "speedRuns", "speedGems", "speedTokens"]
             IniWrite 0, INI, "stats", k
     }
     IniWrite IntOr0(IniRead(INI, "stats", name, "0")) + n, INI, "stats", name
@@ -306,9 +320,16 @@ StatDay(name) => IniRead(INI, "stats", "day", "") = FormatTime(, "yyyyMMdd") ? I
 ; результат забираємо на наступних тіках. Беремо найбільше правдоподібне значення за забіг.
 PollRewards() {
     global ocrPending, lastOcr, runTokens, runKind, lastDmg, dmgChanged, searchTurns, sameReads
-    global rewardRaw, rewardReads, rewardRepeat
+    global rewardRaw, rewardReads, rewardRepeat, tokFromScreen
     if runKind = ""
         runKind := lastEntered
+    if tokFromScreen {                                   ; tokens already read from the results: a late answer must not set them again
+        if ocrPending {
+            try FileDelete OCR_OUT
+            ocrPending := 0
+        }
+        return
+    }
     if ocrPending {
         if FileExist(OCR_OUT) {
             txt := ""
@@ -363,7 +384,7 @@ LOOT := Map(
 ; Екран результатів ("REWARDS"): потрібні нагороди - наприкінці списку. Шукаємо кожну іконку, прокручуючи
 ; список донизу, і читаємо білу цифру під нею (ocr.ps1 -White лишає тільки білий текст).
 ReadLoot(kind) {
-    global runTokens
+    global runTokens, tokFromScreen
     SetStatus("results: reading rewards")
     ParkMouse()
     Sleep 1500                                           ; іконки нагород з'являються по черзі - даємо домалюватись
@@ -383,7 +404,7 @@ ReadLoot(kind) {
                     Stat(it[2], n)
                     Log(RaidTitle() ": " it[3] " " n)
                     if it[2] = "raidTokens"
-                        runTokens := 0                    ; токени рейду вже пораховані з екрана - лічильник з бою не додаємо
+                        runTokens := 0, tokFromScreen := true   ; токени рейду вже пораховані з екрана - лічильник з бою не додаємо
                     todo.RemoveAt(i)
                 }
             }
@@ -581,17 +602,21 @@ BossAhead(&score, &cx) {
                 , ok := mid > 0.08 && (side < 0.08 || mid >= 0.3 && side <= mid / 4)
         c += 5
     }
-    return ok
+    ; the core is a solid upright capsule: some column is gold over most of the strip. 3.11 23:00 the orange hex wall
+    ; behind the arena gave 0.15/0.04 (> 0.08) with at most 13 of 50 px per column, the core 39..44 - the bot walked off sideways
+    k := cx - x0, top := 0
+    Loop 50
+        top := Max(top, col[k - 25 + A_Index])
+    score .= " col " top
+    return ok && top >= 20
 }
 
 ; забіг скінчився: додаємо прочитані нагороди до сум
 FlushRun() {
-    global runTokens, runKind
-    if runKind = "raid" && runTokens > 0 {
-        Stat("raidTokens", runTokens)
-        Log("tokens for raid (from in-fight counter): " runTokens)
-    }
-    runTokens := 0, runKind := ""
+    global runTokens, runKind, tokFromScreen
+    if runKind = "raid" && runTokens > 0 && !tokFromScreen        ; "Rewards: N" counts reward drops, not tokens: log only
+        Log("raid: in-fight Rewards counter " runTokens " (not counted as tokens)")
+    runTokens := 0, runKind := "", tokFromScreen := false
 }
 
 ; The setup checks, used by the "Setup check" screen (deep := true also tests the OCR language) and logged at every start.
@@ -668,7 +693,8 @@ StartupChecks() {
 }
 
 Start() {
-    global running, fightSince, infDrop, curLoadout, loadoutChecked
+    global running, fightSince, infDrop, curLoadout, loadoutChecked, pickFails, pickFailHour, pickMissAt, sessStart
+    pickFails := 0, pickFailHour := "", pickMissAt := 0
     if !setupDone {
         Log("Run the Setup check first (press Check in the window)")
         return
@@ -678,9 +704,10 @@ Start() {
     curLoadout := 0                                      ; поки бот стояв, loadout могли змінити вручну
     for k in sess                                         ; новий запуск - новий підсумок
         sess[k] := 0
+    sessStart := A_TickCount
     Log("start v" APP_VERSION ", order: " cfg["order"] (cfg["skillsOff"] != "" ? ", disabled: " cfg["skillsOff"] : "")
         . ", loadouts=" cfg["loadouts"] ", raid=" cfg["raid"] ", infinity=" cfg["infinity"] ", speed=" cfg["speed"]
-        . ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"])
+        . ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"] ", bossAuto=" cfg["bossAuto"])
     StartupChecks()
     PlaceId()                                             ; поки гра запущена - запам'ятовуємо, куди перезаходити
     OcrServer()                                         ; OCR-сервер вантажиться заздалегідь
@@ -693,16 +720,28 @@ Start() {
 }
 
 Stop() {
-    global running
+    global running, sessStart
+    was := running
     running := false
     SetTimer(Tick, 0)
     ReleaseKeys()
     FlushRun()
-    Log("RUN SUMMARY: raids " sess["raids"] " (gems " sess["raidGems"] ", tokens " sess["raidTokens"] "), Infinity " sess["infRuns"])
+    if was
+        Log(SessLogLine())
+    sessStart := 0
     DllCall("SetThreadExecutionState", "uint", 0x80000000)
     PaintRun()
     SetStatus("stopped")
     Layout()
+}
+
+; one line with this run's totals (the sess counters are reset in Start)
+SessLogLine() {
+    m := sessStart ? (A_TickCount - sessStart) // 60000 : 0
+    return "RUN SUMMARY: raid " sess["raids"] " (gems " sess["raidGems"] ", tokens " sess["raidTokens"] ")"
+        . ", speed " sess["speedRuns"] " (gems " sess["speedGems"] ", tokens " sess["speedTokens"] ")"
+        . ", Infinity " sess["infRuns"] ", Roblox restarts " sess["restarts"]
+        . ", session " (m // 60) "h " Format("{:02}", Mod(m, 60)) "m"
 }
 
 ; відпускаємо клавіші руху (на випадок зупинки посеред патруля чи повороту)
@@ -976,18 +1015,21 @@ Step() {
         || FindImg("enemies_left.png", &x, &y, b[1], b[2], b[3], b[4], "*80 *TransFF00FF")
     ; виходимо з Infinity на рейд, а ми вже в лобі (видно PLAY): це не бій. 29.10 22:00 і 23:00 бот після LEAVE
     ; у лобі 12 min тиснув Esc-R-Enter - на меню Esc хибно "бачив" ENEMIES LEFT, "липкий" бій не закінчувався
-    if lastEntered = "infinity" && goal != "infinity" && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
+    if (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()) && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
             && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
         if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000
             SetStatus("lobby (PLAY visible) - not a fight, not pressing Esc-R-Enter")
         inFight := false
         lastFight := A_TickCount - FIGHT_STICKY
     }
+    inFight := AutoRunOn(inFight)                         ; bossAuto: the raid / Speed Raid run stays one fight
     if inFight {
         partySince := 0
         lastFight := A_TickCount
-        if !fightSince
+        if !fightSince {
             fightSince := A_TickCount
+            AutoReset()                                       ; Auto is off again after a teleport / new run
+        }
         infDrop := false
         if lastEntered = "raid" && raidDoneKey != FormatTime(, "yyyyMMddHH") {
             raidDoneKey := FormatTime(, "yyyyMMddHH")             ; цієї години рейд уже є
@@ -1016,7 +1058,7 @@ Step() {
             if lastEntered = "raid"
                 PollRewards()                        ; лічильник праворуч: нагороди й шкода по босу
             ; "N Combo!" зліва від центру - миттєвий знак, що удари влучають (OCR шкоди повільний, 5+ с на читання)
-            if A_TickCount - lastComboCheck >= 500 {
+            if A_TickCount - lastComboCheck >= 500 && cfg["bossAuto"] != "1" {
                 lastComboCheck := A_TickCount
                 if ComboVisible() {
                     if A_TickCount - lastCombo > 3000
@@ -1034,6 +1076,36 @@ Step() {
         if !inFight && !raidShotDone && BossFight() && fightSince && A_TickCount - lastFight > 3000 {
             raidShotDone := true
             Screenshot(lastEntered = "speed" ? "speed_end" : "raid_rewards")
+        }
+        ; bossAuto: the game's Auto fights; no skills, combo, walks, turns, resets - only keep Auto on and wait for the end
+        if cfg["bossAuto"] = "1" && BossFight() {
+            static lastCard := 0, lastDc := 0
+            if A_TickCount - autoSeen > 10000 && A_TickCount - lastDc >= 10000 {    ; no sign of the run for 10 s: lost connection?
+                lastDc := A_TickCount
+                if Disconnected() {
+                    RestartRoblox("connection lost", , RESTART_GAP_DC)
+                    return
+                }
+            }
+            if !infLootDone && A_TickCount - lastCard >= 1000 {       ; REWARDS panel: gems and tokens
+                lastCard := A_TickCount
+                if RewardCards(lastEntered) {
+                    infLootDone := true
+                    return
+                }
+            }
+            if !raidShotDone && autoBtnAt && A_TickCount - autoBtnAt > 3000 {    ; the Auto button is gone: the end screen is up
+                raidShotDone := true
+                Screenshot(lastEntered = "speed" ? "speed_end" : "raid_end")
+            }
+            if inFight && RespawnScreen()
+                SetStatus("death: waiting for respawn (Auto stays on)")
+            else {
+                if A_TickCount - fightSince > 2000
+                    AutoEnsure()
+                SetStatus((lastEntered = "speed" ? "Speed Raid" : "raid") ": Auto, waiting for the end")
+            }
+            return
         }
         ; час іти в рейд (чи в Speed Raid), а ми в Infinity -> скидаємо персонажів (Esc, R, Enter), поки данж не закінчиться
         if lastEntered = "infinity" && (goal = "raid" || goal = "speed" && !SpeedWait()) {
@@ -1103,10 +1175,8 @@ Step() {
                 } else if BossAhead(&sc, &cx) {
                     deg := 0
                     Log("  boss straight ahead after respawn (core x=" cx ", " sc ")")
-                    Screenshot("respawn_ahead")                 ; what the bot saw when it decided (to tune BossAhead)
                 } else if deg := Num("respawnTurn", 95) {
                     Log("  boss not ahead after respawn (best " sc ") - turning camera")
-                    Screenshot("respawn_turn")
                     RotateCam(Round(deg / 45 * CamPx()))
                 }
                 SetStatus("after respawn: camera " (deg > 0 ? "+" : "") deg "°, walking to the boss " ms " ms")
@@ -1116,15 +1186,13 @@ Step() {
                     DashWalk(ms)
                 else
                     HoldKey("w", ms)
-                if Knockback()
-                    Screenshot("respawn_after")                 ; is the boss in view after the turn and the walk?
                 return
             }
         }
         ; бос у рейді стоїть за кілька метрів попереду -> на початку бою підходимо до нього
         if inFight && raidWalkDue && BossFight() {
             raidWalkDue := false
-            ms := Min(lastEntered = "speed" ? Num("speedWalk", 2000) : Num("raidWalk", 1500), 10000)
+            ms := Min(lastEntered = "speed" ? Num("speedWalk", 2000) : Num("raidWalk", 3000), 10000)
             if ms > 0 {
                 SetStatus((lastEntered = "speed" ? "Speed Raid" : "raid") ": walking to the boss " ms " ms")
                 HoldKey("w", ms)
@@ -1183,7 +1251,6 @@ Step() {
                 lastAuto := A_TickCount, autoOffAt := A_TickCount + 5000, sameSince := 0, lastSig := ""
                 Log("  Infinity: ENEMIES LEFT did not change for " ms // 1000 " s - Auto on for 5 s")
                 SetStatus("enemies are not dying - Auto for 5 s")
-                Screenshot("inf_far")
                 ClickXY(AUTO_BTN[1], AUTO_BTN[2])
                 ParkMouse()
                 return
@@ -1196,6 +1263,7 @@ Step() {
                 && A_TickCount - Max(lastCombo, fightSince, lastRespawnAt) > ms {
             Log("  no Combo for " (A_TickCount - Max(lastCombo, fightSince, lastRespawnAt)) // 1000 " s - resetting character")
             SetStatus("no Combo - reset: Esc-R-Enter")
+            Screenshot("no_combo_reset")                  ; where the character was when it lost the boss
             rdResetCombo++, charIdx := 0
             HoldKey("Esc")
             Sleep 1000
@@ -1227,7 +1295,7 @@ Step() {
                     . ", deaths+resets " rdChanges ", resets " (rdResetNo5 + rdResetCombo) " (no 5: " rdResetNo5 ", no Combo: " rdResetCombo ")")
             ; відлік наступного Speed Raid гра починає з перемоги (lastFight - останній кадр бою), а не зі старту
             if lastEntered = "speed" {
-                SpeedLater(SPEED_EVERY + 15 - (A_TickCount - lastFight) // 1000)
+                SpeedLater(SPEED_EVERY + 15 - SinceFight() // 1000)
                 Log("  next Speed Raid at " FormatTime(speedDue, "HH:mm:ss"))
             }
         }
@@ -1266,6 +1334,7 @@ Step() {
         lastDmg := "", dmgChanged := A_TickCount, searchTurns := 0, sameReads := 0   ; новий бій - шкоду рахуємо заново
         Stat(lastEntered = "raid" ? "raids" : "infRuns")                ; ще один забіг у статистику
         raidWalkDue := true                                              ; у новому бою знову підійдемо до боса
+        AutoReset()
         learnLeft := 30, comboSeen := false, lastCombo := 0
         portraitSig := "", walkAt := 0                                    ; новий бій - портрет запам'ятаємо заново
         patrolIdx := 0                                                    ; новий забіг - персонаж знову в центрі
@@ -1333,7 +1402,7 @@ Step() {
         Sleep 1500
         return
     }
-    if hasHal && goal = "raid" && rd[1] = "" {                            ; рейд без еталона - шукаємо за назвою
+    if hasHal && goal = "raid" && !hasRaid {                            ; рейд без еталона - шукаємо за назвою
         if PickRaidByName(rd) {
             SetEntered("raid")
             friendsDone := false
@@ -1350,7 +1419,7 @@ Step() {
         return
     }
     if hasInf {                                                           ; список данжів, але час рейду
-        SetStatus("closing the dungeon list (raid time)")
+        SetStatus("closing the Infinite Mode list (raid time)")
         ClickXY(1227, 261)                                                ; хрестик вікна
         ParkMouse()
         Sleep 1000
@@ -1367,13 +1436,30 @@ Step() {
         return
     }
     if FindImg("create_tab.png", &x, &y) {                                ; вікно Join/Create
+        ; 4.11 00:04: Create tab pressed for 2 min and the raid was never found in the list - no shot of it
+        static tabSince := 0, tabLast := 0, tabShot := 0
+        if A_TickCount - tabLast > 15000
+            tabSince := A_TickCount
+        tabLast := A_TickCount
+        if A_TickCount - tabSince > 20000 && A_TickCount - tabShot > 300000 {
+            tabShot := A_TickCount
+            Log("  Create tab for 20 s: the " (goal = "infinity" ? "Infinite Mode" : rd[3]) " card is not found in the list")
+            Screenshot("list_nomatch")
+        }
         SetStatus("Create tab")
         ClickImg("create_tab.png", x, y)
         ParkMouse()
         Sleep 2000                                                        ; список підвантажується
         ; рейд без еталона: Halloween колись зникне зі списку, тож не чекаємо його - шукаємо одразу
-        if goal = "raid" && rd[1] = "" && PickRaidByName(rd) {
+        ; 4.11 15:03: after the game update divine.png no longer matched its card - the name (OCR) is the fallback for every raid
+        if goal = "raid" && PickRaidByName(rd) {
             SetEntered("raid")
+            friendsDone := false
+            Sleep 1500
+        }
+        ; 4.11: the Halloween Dimension event card pushed Infinite Mode down and infinite.png stopped matching - pick it by name
+        if goal = "infinity" && PickInfinity() {
+            SetEntered("infinity")
             friendsDone := false
             Sleep 1500
         }
@@ -1408,6 +1494,7 @@ Step() {
         if MenuLoadoutWrong(1)
             return
         SetStatus("teleporting to the raid world")
+        Screenshot("raid_world")                          ; 3.11 23:00 this matched inside the raid: shows what was clicked
         ClickImg("raid_mode.png", x, y)
         ParkMouse()
         WaitLoaded()
@@ -1419,7 +1506,7 @@ Step() {
             Log("lobby after Infinity was cut off")
             Screenshot("inf_lobby")
         }
-        if goal = "raid" || goal = "infinity" || goal = "speed" {         ; перед входом - потрібний loadout
+        if goal = "raid" || goal = "infinity" || goal = "speed" {   ; перед входом - потрібний loadout (рейд 1, Infinity 2, Speed 3)
             if cfg["loadouts"] != "1"
                 CheckLoadoutOnce()                                        ; перемикання вимкнене - лише читаємо, що стоїть
             EnsureLoadout(goal = "raid" ? 1 : goal = "speed" ? 3 : 2)
@@ -1595,6 +1682,8 @@ FindImg(name, &x, &y, x1 := 0, y1 := 0, x2 := A_ScreenWidth, y2 := A_ScreenHeigh
     catch
         return false
     ; запасний еталон "назва_2.png" - той самий напис у дещо іншому масштабі (наприклад, гра в RDP-сесії)
+    ; play_2.png: only the letter cores (2 px of every edge cut) - PLAY pulses, and 3.11 the full letters matched only at one size
+    ; enemies_left_2.png: the same letters on a bright map (a bright desert map, 4.11) - lighter red, 31 of 350 px were off at *80
     alt := IMGDIR StrReplace(name, ".png", "_2.png")
     if !found && FileExist(alt)
         try found := ImageSearch(&x, &y, x1, y1, x2, y2, opts " " alt)
@@ -1660,9 +1749,16 @@ WaitLoaded() {
             Sleep 500                            ; дати інтерфейсу домалюватись
             return
         }
+        ; 3.11 23:00: raid_mode.png matched in the raid itself and the bot stood here 60 s while the fight went on
+        h := ENEMIES_HOME
+        if FindImg("enemies_left.png", &x, &y, h[1] - 12, h[2] - 12, h[1] + 66, h[2] + 38, "*80 *TransFF00FF") {
+            Log("  already in a fight (ENEMIES LEFT) after " Round((A_TickCount - t0) / 1000, 1) " s - not waiting for the lobby")
+            return
+        }
         Sleep 500
     }
     Log("  lobby did not load in 60 s")
+    Screenshot("no_lobby")
 }
 
 ; вікно обриву з'єднання Roblox: текст у центрі екрана містить Disconnected / Reconnect / Retry / Error Code
@@ -1781,40 +1877,69 @@ PartyBonus() {
     return val
 }
 
+; Infinite Mode in the Create list by name; after a miss, waits a minute before searching again
+PickInfinity() {
+    static retryAt := 0
+    if A_TickCount < retryAt
+        return false
+    if PickRaidByName(["", 0, "Infinite Mode", "i)Infinite"], false)
+        return true
+    retryAt := A_TickCount + 60000
+    return false
+}
+
 ; Рейд без еталона: шукаємо його назву в списку рейдів (OCR), гортаючи колесом від початку,
 ; і тиснемо Create під назвою. true - натиснули.
-PickRaidByName(rd) {
-    global raidDoneKey
-    static fails := 0, failHour := ""
+PickRaidByName(rd, isRaid := true) {
+    global raidDoneKey, pickFails, pickFailHour, pickMissAt
     b := RAID_LIST
     SetStatus("looking for " rd[3] " in the list")
-    ListWheel("Up", 40)                                   ; на початок списку
-    prev := "-"
-    Loop 12 {
+    ListWheel("Up", 80)                                   ; на початок списку (private server: more raids above the Infinite Mode)
+    Sleep 1500                                            ; 4.11: the list keeps sliding after the wheel - OCR read an empty moving list
+    prev := "-", empty := 0
+    Loop 80 {
         lines := OcrRegion(b, true)
+        if !lines.Length && ++empty <= 4 {                 ; nothing read: the list is still moving - read again, do not scroll
+            Sleep 700
+            continue
+        }
         all := "", titleY := 0
         for ln in lines {
-            all .= ln[2] "|"
+            all .= ln[1] ":" ln[2] "|"                   ; with y: small steps may show the same rows, only shifted
             if !titleY && RegExMatch(ln[2], rd[4])
                 titleY := ln[1]
             else if titleY && InStr(ln[2], "reate") && ln[1] > titleY && ln[1] - titleY < 130 {
                 SetStatus("selecting " rd[3])
                 ClickXY(RAID_CREATE_X, b[2] + ln[1])
                 ParkMouse()
+                if isRaid
+                    pickFails := 0
                 return true
             }
         }
         if all = prev                                     ; список уже не гортається - кінець
             break
         prev := all
-        ListWheel("Down", 10)                             ; ~1.5 рядка: назва з кнопкою не проскочать
+        ; 4 notches (~half a row): with 10 the title at the bottom edge (its Create still hidden) jumped off the top
+        ; on the next step - 4.11 a raid on the private server was skipped this way
+        ListWheel("Down", 2, 200)                         ; 4.11 user: down slowly and a little at a time
+        Sleep 500                                         ; let the list stop before the next read
     }
     hour := FormatTime(, "yyyyMMddHH")
-    fails := failHour = hour ? fails + 1 : 1
-    failHour := hour
-    Log("  " rd[3] ": not found in the raid list (" fails ")")
+    if isRaid {                                           ; a miss within 60 s of the last counted one does not count (list still scrolling)
+        if pickFailHour != hour
+            pickFails := 0, pickMissAt := 0
+        pickFailHour := hour
+        if !pickMissAt || A_TickCount - pickMissAt > 60000
+            pickFails++, pickMissAt := A_TickCount
+        Log("  " rd[3] ": not found in the raid list (" pickFails "/3)")
+    } else
+        Log("  " rd[3] ": not found in the list")
     Screenshot("raid_list")
-    if fails >= 2 {                                       ; рейд зник з гри (limited) - не шукаємо до кінця години
+    ListWheel("Up", 80)                                   ; do not stay at the bottom of the list
+    if !isRaid
+        return false
+    if pickFails >= 3 {                                       ; рейд зник з гри (limited) - не шукаємо до кінця години
         Log("  skipping this hour's raid: " rd[3] " is not in the list, pick another raid")
         raidDoneKey := hour
         IniWrite raidDoneKey, INI, "state", "raidDoneKey"
@@ -1826,7 +1951,7 @@ PickRaidByName(rd) {
 
 ; Гортає список рейдів колесом. Roblox ловить колесо лише над списком після руху миші,
 ; тому спершу ворушимо мишу, а оберти шлемо по одному.
-ListWheel(dir, n) {
+ListWheel(dir, n, gap := 25) {
     b := RAID_LIST
     cx := b[1] + 60, cy := b[2] + b[4] // 2
     MouseMove cx + 8, cy + 8, 0
@@ -1835,7 +1960,7 @@ ListWheel(dir, n) {
     Sleep 150
     Loop n {
         Send "{Wheel" dir "}"
-        Sleep 25
+        Sleep gap
     }
     Sleep 700
 }
@@ -1920,11 +2045,6 @@ EnsureLoadout(n, onlyCheck := false) {
                 break
             Sleep 700
         }
-    }
-    static bagShotAt := 0
-    if bagOpen && (!bagShotAt || A_TickCount - bagShotAt > 30 * 60000) {   ; скільки cards у Bag (зліва вгорі) -
-        bagShotAt := A_TickCount                          ; щоб помітити, коли інвентар заповнюється (29.10)
-        Screenshot("bag")
     }
     if bagOpen                                            ; Bag відкритий - закриваємо (навіть якщо не прочитали)
         ClickXY(BAG_CLOSE[1], BAG_CLOSE[2])
@@ -2067,6 +2187,7 @@ SpeedEnter(x, y) {
     infLootDone := false, raidShotDone := false
     lastDmg := "", dmgChanged := A_TickCount, searchTurns := 0, sameReads := 0
     raidWalkDue := true, learnLeft := 0, comboSeen := false, lastCombo := 0
+    AutoReset()
     portraitSig := "", walkAt := 0, patrolIdx := 0
     Stat("speedRuns")
     Log("Speed Raid: start (character x=" cx " y=" cy ")")
@@ -2508,6 +2629,7 @@ ResetNo5() {
     global rdResetNo5, lastNo5Reset, charIdx
     charIdx := 0                                          ; після ресету Respawn дасть першого -> стане 1
     Log("  unwanted character after respawn - resetting to get the first one again")
+    Screenshot("unwanted_char")
     SetStatus("character reset: Esc-R-Enter")
     rdResetNo5++
     if lastNo5Reset && A_TickCount - lastNo5Reset < 20000
@@ -2564,20 +2686,7 @@ Fight() {
     ; рухатись можна лише поза комбо і поза анімацією скілів, що блокують рух (4, 5):
     ; інакше крок "з'їдається", і персонаж збивається з маршруту
     canMove := A_TickCount >= comboUntil && A_TickCount >= lockUntil
-    ; infStand: в Infinity стоїмо на місці - вороги самі йдуть під великі AOE
-    stand := cfg["infStand"] = "1" && !BossFight()
-    ; в Infinity вороги часом б'ють здалеку -> раз на кілька секунд проходимо шматок маршруту по арені
-    if cfg["patrol"] = "1" && !stand && !BossFight() && A_TickCount - lastPatrol >= Num("patrolMs", 9000)
-            && canMove {
-        Patrol()
-        return
-    }
-    ; вороги з усіх боків, а скіли б'ють лише вперед -> час від часу розвертаємось
-    if cfg["turn"] = "1" && !stand && !BossFight() && A_TickCount - lastTurn >= Num("turnMs", 2500)
-            && canMove {
-        TurnToEnemy()
-        return
-    }
+    ; v0.3: в Infinity завжди стоїмо на місці (Patrol і Turn прибрані) - вороги самі йдуть під великі AOE
     ; помічники (E R Z X) не залежать від основних скілів і працюють навіть під час анімацій,
     ; тож тиснемо кожен, щойно він готовий - на кожному тіку, окремо від порядку 1-5
     ; В Infinity великі AOE (spread: 5 4 E R X) не тиснемо всі разом, а по одному: наступний - коли попередній
@@ -2617,7 +2726,7 @@ Fight() {
                 spreadKey := ""
             }
         }
-    comboOn := cfg["combo"] = "1" && lastEntered != "speed"          ; у Speed Raid комбо немає
+    comboOn := false                                                  ; v0.3: комбо прибране
     if A_TickCount < comboUntil && comboOn && cfg["comboSpam"] != "" {
         ; комбо: тримаємо клавішу затиснутою до кінця комбо (весь час, без перерв на інші перевірки)
         ; і кожні 50 ms шлемо повтор "натиснуто" - як фізична клавіша при утриманні
@@ -2737,7 +2846,7 @@ PrimeSkill(order, assists, spread) {
         ; анімації 3 і "не спрацьовував" (28.10 23:01)
         if left <= 0 {
             lastCast := A_TickCount
-            if key = cfg["comboKey"] && cfg["combo"] = "1" && lastEntered != "speed" && comboFor != castAt[key] {
+            if false && key = cfg["comboKey"] && comboFor != castAt[key] {   ; v0.3: комбо прибране
                 comboFor := castAt[key]
                 comboUntil := A_TickCount + Num("comboMs", 3000)
             }
