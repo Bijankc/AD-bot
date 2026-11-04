@@ -1015,7 +1015,9 @@ Step() {
         || FindImg("enemies_left.png", &x, &y, b[1], b[2], b[3], b[4], "*80 *TransFF00FF")
     ; виходимо з Infinity на рейд, а ми вже в лобі (видно PLAY): це не бій. 29.10 22:00 і 23:00 бот після LEAVE
     ; у лобі 12 min тиснув Esc-R-Enter - на меню Esc хибно "бачив" ENEMIES LEFT, "липкий" бій не закінчувався
-    if (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()) && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
+    ; 4.11 22:34: start in the lobby with goal infinity and lastEntered=infinity from the ini: the pink lobby matched ENEMIES LEFT,
+    ; the bot "fought" in the lobby. PLAY is never visible in a fight, so no goal / lastEntered condition here.
+    if (inFight || A_TickCount - lastFight < FIGHT_STICKY)
             && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
         if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000
             SetStatus("lobby (PLAY visible) - not a fight, not pressing Esc-R-Enter")
