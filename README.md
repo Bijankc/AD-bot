@@ -34,12 +34,12 @@
 - Screen **1920x1080**, Windows scale **100%**, taskbar at the bottom
 - Screen lock and screensaver turned off
 - English OCR language pack in Windows (Settings > Time & Language > Language)
-- In Roblox: lowest graphics
+- In Roblox (Optional): lowest graphics
 - Optional: loadout 1 = raid, 2 = Infinity, 3 = Speed Raid, then turn on **Switch loadout**
 
 ## How to start
 
-1. Download the repository (Code > Download ZIP) and unpack it.
+1. Download the repository (Code > Download ZIP) and unpack it!
 2. Open Roblox, join the game and wait in the lobby.
 3. Run `RaidBot.ahk`. On the first start press **Check now**, fix what it shows, then **Continue**.
 4. Pick the raid and modes.
