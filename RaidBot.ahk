@@ -97,7 +97,8 @@ CLOSE_XS := [[1506, 321], [1227, 261], [1496, 201], [BAG_CLOSE[1], BAG_CLOSE[2]]
 UPDATE_LOGS_X := [1114, 13]              ; від лівого верхнього кута напису "UPDATE LOGS" до хрестика вікна
 ; вікно Roblox "Disconnected / Leave / Reconnect": читаємо текст у центрі екрана (OCR), бо фон під вікном будь-який
 DISCONNECT_BOX := [560, 280, 800, 520]
-DISCONNECT_RE  := "i)disconnect|reconnect|retry|lost connection|error code|connection"
+; no bare "retry": the RETRY button of Dimension / Infinity results is inside DISCONNECT_BOX (planner 5.11)
+DISCONNECT_RE  := "i)disconnect|reconnect|lost connection|error code|connection"
 ; браузер зі сторінкою гри на roblox.com (вкладка Servers): перезаходимо кнопкою Join першого приватного сервера
 BROWSER    := "Anime Dimensions ahk_class Chrome_WidgetWin_1"
 JOIN_COLOR := 0x1D3570          ; темно-синя кнопка Join (сіра Create поруч не підходить)
@@ -1016,8 +1017,11 @@ Step() {
     ; виходимо з Infinity на рейд, а ми вже в лобі (видно PLAY): це не бій. 29.10 22:00 і 23:00 бот після LEAVE
     ; у лобі 12 min тиснув Esc-R-Enter - на меню Esc хибно "бачив" ENEMIES LEFT, "липкий" бій не закінчувався
     ; 4.11 22:34: start in the lobby with goal infinity and lastEntered=infinity from the ini: the pink lobby matched ENEMIES LEFT,
-    ; the bot "fought" in the lobby. PLAY is never visible in a fight, so no goal / lastEntered condition here.
-    if (inFight || A_TickCount - lastFight < FIGHT_STICKY)
+    ; the bot "fought" in the lobby. But 4.11 22:51 play.png also matched the bright floor at Infinity wave 40, so without the
+    ; goal condition PLAY counts only in the first 20 s of a "fight" (a lobby false fight is caught on its first ticks).
+    if (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()
+            || !fightSince || A_TickCount - fightSince < 20000)
+            && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
             && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
         if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000
             SetStatus("lobby (PLAY visible) - not a fight, not pressing Esc-R-Enter")
