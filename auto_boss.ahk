@@ -34,6 +34,30 @@ AutoOnVisible() {
     return FindImg("auto_on.png", &x, &y, b[1], b[2], b[3], b[4])
 }
 
+; The AUTO button (OFF or ON) over the skill bar is shown only in a fight - Infinity, raid, Speed Raid - never in the lobby,
+; the menus or the raid world. It is part of the HUD, so it is drawn over every effect. 6.11 (2560x1440 PC): a big white /
+; yellow AOE washed the screen, play.png matched the white -> "lobby" mid-fight hundreds of times in 3 h (the bot stopped
+; fighting, pressed "PLAY" in the arena, 7 Infinity runs instead of steady farming); and on a bright floor ENEMIES LEFT did
+; not match for 90 s -> Esc, window crosses and Roblox restarts mid-fight. Checked on 98 screenshots of that night: the letters
+; are always there in a fight. Around the letters the diamond is dark red, black in the flash or purple (ON) - never white,
+; so a white blob that also fits the letters is rejected (2 of the points must not be white).
+AUTO_ON_PTS := [[-6, 3], [70, 3], [32, -18], [32, 24]]     ; around the "AUTO ON" letters (63x9), same idea as AUTO_OFF_PTS
+FightHud() {
+    b := AutoBox()
+    for it in [["auto_off.png", AUTO_OFF_PTS], ["auto_on.png", AUTO_ON_PTS]] {
+        if !FindImg(it[1], &x, &y, b[1], b[2], b[3], b[4])
+            continue
+        n := 0
+        for p in it[2] {
+            c := Integer(PixelGetColor(x + p[1], y + p[2]))
+            n += Min(c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF) < 170       ; not white
+        }
+        if n >= 2
+            return true
+    }
+    return false
+}
+
 ; The ENEMIES LEFT picture flickers on bright maps (4.11: one raid became 5 "fights"), so the run stays "in fight"
 ; while ENEMIES LEFT or the Auto button is seen, and after that until the lobby (PLAY) shows or 3 min pass without any sign.
 ; Returns the fight state to use instead of the raw ENEMIES LEFT result.
@@ -41,7 +65,9 @@ AutoRunOn(rawFight) {
     global autoSeen, autoBtnAt, fightSince
     if cfg["bossAuto"] != "1" || !BossFight()
         return rawFight
-    if FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {    ; lobby: the run is over (or never began); ENEMIES LEFT seen here is a false hit
+    ; lobby: the run is over (or never began); ENEMIES LEFT seen here is a false hit. Not while the AUTO button shows: then
+    ; "PLAY" is a white flash in the fight (hudSeen - this tick's FightHud, see Step)
+    if !hudSeen && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
         if fightSince
             AutoRunEnd()
         return false

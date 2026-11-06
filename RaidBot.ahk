@@ -174,6 +174,7 @@ sessStart := 0           ; tick of the bot start (for the session length in the 
 pickFails := 0, pickFailHour := "", pickMissAt := 0   ; PickRaidByName: misses of this hour's raid (reset in Start)
 sess := Map("raids", 0, "raidGems", 0, "raidTokens", 0, "speedRuns", 0, "speedGems", 0, "speedTokens", 0, "infRuns", 0, "restarts", 0)   ; підсумок поточного запуску бота
 FIGHT_STICKY := 15000    ; скільки ms після цього ще битися, якщо екран не розпізнано
+hudSeen    := false      ; this tick the game's AUTO button was on screen (= a fight, see FightHud)
 lastReset  := 0          ; коли востаннє робили Esc-R-Enter
 lastTurn   := 0          ; коли востаннє розвертались
 lastPatrol := A_TickCount ; коли востаннє йшли патрулем
@@ -284,6 +285,12 @@ catch
     speedDue := ""         ; коли Speed Raid знову доступний (yyyyMMddHHmmss)
 speedFails := 0                                           ; невдалих спроб Speed Raid поспіль
 raidDoneKey := IniRead(INI, "state", "raidDoneKey", "")
+; Raid clock: second of the real hour at which THIS server's raid opens (0 = on the hour, as the bot was written for).
+; 6.11: the raid timer runs per server - at 13:35 the menu said "Raid Opens in: 24:37" (opens at :00), but after a Roblox
+; restart at 19:10 the fresh private server opened its raid at :45 ("Raid opens in 35 Minutes" at 20:10), and the bot pressed
+; Create from 59:30 to :10 every hour for nothing. So the bot reads the game's countdown (RaidClockLearn) and the whole hourly
+; plan (infStop, createFrom, the 10 min window, Speed Raid cut-off, "raid done this hour") runs on the shifted hour.
+raidOfs := Mod(IntOr0(IniRead(INI, "state", "raidOfs", "0")), 3600)
 
 if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: лише скіли
     cfg["fightOnly"] := "1"
@@ -930,8 +937,41 @@ MinSec(text, def := 0) {
         return def
 }
 
+; seconds since this server's raid opened (0..3599) - "the raid hour"; with raidOfs 0 it is the real minute:second
 SecOfHour() {
-    return Integer(A_Min) * 60 + Integer(A_Sec)
+    return Mod(Integer(A_Min) * 60 + Integer(A_Sec) - raidOfs + 3600, 3600)
+}
+
+RaidMin() => SecOfHour() // 60
+
+; which raid hour it is (yyyyMMddHH of the moment this raid hour began) - for "raid done this hour"
+RaidHourKey() => FormatTime(DateAdd(A_Now, -raidOfs, "Seconds"), "yyyyMMddHH")
+
+; The game's raid countdown -> raidOfs. Modes menu card: "Raid Opens in: 24:37"; raid world banner: "Raid opens in
+; 35 Minutes 0 Second". Returns true if a countdown was read. A change of more than 30 s is logged and saved.
+RaidClockLearn(txt) {
+    global raidOfs
+    txt := StrReplace(StrReplace(txt, "`n", " "), "`r", " ")
+    txt := RegExReplace(txt, "i)\bo(?=\s*(sec|min))", "0")          ; OCR reads "0 Second" as "O Second"
+    if RegExMatch(txt, "i)opens?\W*in\W*(\d{1,2})\s*[:.]\s*(\d\d)", &m)
+        left := Integer(m[1]) * 60 + Integer(m[2])
+    else if RegExMatch(txt, "i)opens?\W*in\W*(\d{1,2})\s*min\w*\W*(\d{1,2})\s*sec", &m)
+        left := Integer(m[1]) * 60 + Integer(m[2])
+    else if RegExMatch(txt, "i)opens?\W*in\W*(\d{1,2})\s*min", &m)
+        left := Integer(m[1]) * 60
+    else
+        return false
+    if left >= 3600
+        return false
+    ofs := Mod(Integer(A_Min) * 60 + Integer(A_Sec) + left, 3600)
+    d := Abs(ofs - raidOfs), d := Min(d, 3600 - d)
+    if d > 30 {
+        Log("raid clock: this server's raid opens at :" Format("{:02}:{:02}", ofs // 60, Mod(ofs, 60))
+            . " (read '" Trim(SubStr(txt, 1, 60)) "', was :" Format("{:02}:{:02}", raidOfs // 60, Mod(raidOfs, 60)) ")")
+        raidOfs := ofs
+        IniWrite raidOfs, INI, "state", "raidOfs"
+    }
+    return true
 }
 
 ; Куди зараз треба (пріоритет: рейд > Speed Raid > Infinity):
@@ -954,7 +994,7 @@ PickTarget(&why) {
         why := "the hour is ending, going for the raid"
         return "raid"
     }
-    if raidOn && Integer(A_Min) < RAID_WINDOW && raidDoneKey != FormatTime(, "yyyyMMddHH") {
+    if raidOn && RaidMin() < RAID_WINDOW && raidDoneKey != RaidHourKey() {
         why := "no raid yet this hour"
         return "raid"
     }
@@ -978,7 +1018,7 @@ PickTarget(&why) {
 SpeedReady() {
     if cfg["speed"] != "1" || (speedDue && DateDiff(A_Now, speedDue, "Seconds") < 0)
         return false
-    return cfg["raid"] != "1" || Integer(A_Min) < SPEED_LAST_MIN
+    return cfg["raid"] != "1" || RaidMin() < SPEED_LAST_MIN
 }
 
 ; Speed Raid став доступний, а ми в Infinity: вихід з Infinity і повернення коштують ~2.5 min бою.
@@ -1027,12 +1067,16 @@ Step() {
     h := ENEMIES_HOME
     inFight := FindImg("enemies_left.png", &x, &y, h[1] - 12, h[2] - 12, h[1] + 66, h[2] + 38, "*80 *TransFF00FF")
         || FindImg("enemies_left.png", &x, &y, b[1], b[2], b[3], b[4], "*80 *TransFF00FF")
+    ; the game's AUTO button is a fight too (see FightHud): ENEMIES LEFT misses on bright floors, and with it on screen
+    ; a PLAY match is a white AOE flash, not the lobby
+    global hudSeen := FightHud()
+    inFight := inFight || hudSeen
     ; виходимо з Infinity на рейд, а ми вже в лобі (видно PLAY): це не бій. 29.10 22:00 і 23:00 бот після LEAVE
     ; у лобі 12 min тиснув Esc-R-Enter - на меню Esc хибно "бачив" ENEMIES LEFT, "липкий" бій не закінчувався
     ; 4.11 22:34: start in the lobby with goal infinity and lastEntered=infinity from the ini: the pink lobby matched ENEMIES LEFT,
     ; the bot "fought" in the lobby. But 4.11 22:51 play.png also matched the bright floor at Infinity wave 40, so without the
     ; goal condition PLAY counts only in the first 20 s of a "fight" (a lobby false fight is caught on its first ticks).
-    if (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()
+    if !hudSeen && (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()
             || !fightSince || A_TickCount - fightSince < 20000)
             && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
             && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
@@ -1050,8 +1094,8 @@ Step() {
             AutoReset()                                       ; Auto is off again after a teleport / new run
         }
         infDrop := false
-        if lastEntered = "raid" && raidDoneKey != FormatTime(, "yyyyMMddHH") {
-            raidDoneKey := FormatTime(, "yyyyMMddHH")             ; цієї години рейд уже є
+        if lastEntered = "raid" && raidDoneKey != RaidHourKey() {
+            raidDoneKey := RaidHourKey()                          ; цієї години рейд уже є
             IniWrite raidDoneKey, INI, "state", "raidDoneKey"
         }
     }
@@ -1380,6 +1424,14 @@ Step() {
                 Log("  Friends Only already enabled")
             return
         }
+        ; raid world: the banner over the window says when this server's raid opens ("Raid opens in 35 Minutes 0 Second").
+        ; Read it before deciding anything (at most every 30 s): if the clock was wrong, the goal below is recomputed from it
+        static bannerAt := 0
+        if lastEntered = "raid" && cfg["raid"] = "1" && A_TickCount - bannerAt > 30000 {
+            bannerAt := A_TickCount
+            RaidClockLearn(OcrRegion([560, 150, 800, 50]))
+            goal := Target()
+        }
         ; час рейду минув (рейд можна створити лише 10 min після початку години, 29.10 18:12 бот
         ; тиснув Create до 18:30 і чекав до 59:30) - з світу рейду в лобі шляху нема, перезапуск гри
         if lastEntered = "raid" && goal != "raid" {
@@ -1483,6 +1535,14 @@ Step() {
             Sleep 1500
         }
         return
+    }
+    ; modes menu: the RAID card shows this server's countdown just above its title ("Raid Opens in: 24:37") - learn the raid
+    ; clock from it (at most every 2 min); a new goal from it applies on the next tick
+    static clockAt := 0
+    if cfg["raid"] = "1" && A_TickCount - clockAt > 120000 && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
+        clockAt := A_TickCount
+        if RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30]))
+            return
     }
     if goal = "infinity" && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
         if MenuLoadoutWrong(2)
@@ -1944,7 +2004,7 @@ PickRaidByName(rd, isRaid := true) {
         ListWheel("Down", 2, 200)                         ; 4.11 user: down slowly and a little at a time
         Sleep 500                                         ; let the list stop before the next read
     }
-    hour := FormatTime(, "yyyyMMddHH")
+    hour := RaidHourKey()
     if isRaid {                                           ; a miss within 60 s of the last counted one does not count (list still scrolling)
         if pickFailHour != hour
             pickFails := 0, pickMissAt := 0

@@ -204,7 +204,7 @@ UiCompute() {
         : sLeft >= 3600 ? Round(sLeft / 3600) " h" : Format("{:02}:{:02}", sLeft // 60, Mod(sLeft, 60))
     goal := cfg["fightOnly"] = "1" ? "fight" : Target()
     dGoal := goal = "raid" ? "Raid" : goal = "speed" ? "Speed" : goal = "infinity" ? "Infinity" : goal = "fight" ? "Fight" : "—"
-    dDone := raidDoneKey = FormatTime(, "yyyyMMddHH") ? "done" : "not yet"
+    dDone := raidDoneKey = RaidHourKey() ? "done" : "not yet"
     return dRaid "|" dSpeed "|" dGoal "|" dDone "|" uiStatus "|" running "|" curPage "|" hoverId "|" uiLog.Length
         . "|" (WinExist(GAME) != 0) "|" curLoadout "|" (running && A_TickCount - lastFight < FIGHT_STICKY)
         . "|" sess["raids"] "," sess["infRuns"] "," sess["raidGems"] "," sess["raidTokens"] "," runTokens
