@@ -107,7 +107,8 @@ SPEED_BAR_X     := 1477                  ; смуга прокрутки спи�
 speedBarX       := SPEED_BAR_X           ; знайдений X повзунка
 SPEED_ORDER     := "5 4 3 2 1"           ; порядок скілів у Speed Raid (комбо немає; 5 є не в усіх - порожній слот не готовий, пропуск)
 INF_OFFSET    := [109, 95]               ; те саме для напису "Infinite Mode"
-RAID_WINDOW   := 10                      ; перші N minилин години пробуємо зайти в рейд (якщо цієї години ще не були; пізніше рейд не створити)
+RAID_SOON     := 360                     ; s before infStop: in the lobby, go for the raid instead of starting Infinity
+RAID_WINDOW   := 10                     ; перші N minилин години пробуємо зайти в рейд (якщо цієї години ще не були; пізніше рейд не створити)
 RESET_EVERY   := 5000                    ; як часто робити Esc-R-Enter, коли виходимо з Infinity
 CREATE_RETRY  := 5000                    ; як часто тиснути Create, поки рейд закритий
 PATROL_ROUTE := ["w", "d", "s", "s", "a", "a", "w", "w", "d"]   ; маршрут патруля в Infinity (див. Patrol)
@@ -193,6 +194,7 @@ pickFails := 0, pickFailHour := "", pickMissAt := 0   ; PickRaidByName: misses o
 sess := Map("raids", 0, "raidGems", 0, "raidTokens", 0, "speedRuns", 0, "speedGems", 0, "speedTokens", 0, "infRuns", 0, "restarts", 0)   ; підсумок поточного запуску бота
 FIGHT_STICKY := 15000    ; скільки ms після цього ще битися, якщо екран не розпізнано
 hudSeen    := false      ; this tick the game's AUTO button was on screen (= a fight, see FightHud)
+tickNo     := 0          ; Step calls, so a check made twice in one tick counts once (LobbyPlay)
 lastReset  := 0          ; коли востаннє робили Esc-R-Enter
 lastTurn   := 0          ; коли востаннє розвертались
 lastPatrol := A_TickCount ; коли востаннє йшли патрулем
@@ -309,6 +311,7 @@ raidDoneKey := IniRead(INI, "state", "raidDoneKey", "")
 ; Create from 59:30 to :10 every hour for nothing. So the bot reads the game's countdown (RaidClockLearn) and the whole hourly
 ; plan (infStop, createFrom, the 10 min window, Speed Raid cut-off, "raid done this hour") runs on the shifted hour.
 raidOfs := Mod(IntOr0(IniRead(INI, "state", "raidOfs", "0")), 3600)
+raidCand := -1           ; a raid time read once, waiting for a second reading that agrees (RaidClockLearn)
 
 if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: лише скіли
     cfg["fightOnly"] := "1"
@@ -970,7 +973,7 @@ RaidHourKey() => FormatTime(DateAdd(A_Now, -raidOfs, "Seconds"), "yyyyMMddHH")
 ; The game's raid countdown -> raidOfs. Modes menu card: "Raid Opens in: 24:37"; raid world banner: "Raid opens in
 ; 35 Minutes 0 Second". Returns true if a countdown was read. A change of more than 30 s is logged and saved.
 RaidClockLearn(txt) {
-    global raidOfs
+    global raidOfs, raidCand
     txt := StrReplace(StrReplace(txt, "`n", " "), "`r", " ")
     txt := RegExReplace(txt, "i)\bo(?=\s*(sec|min))", "0")          ; OCR reads "0 Second" as "O Second"
     if RegExMatch(txt, "i)opens?\W*in\W*(\d{1,2})\s*[:.]\s*(\d\d)", &m)
@@ -984,8 +987,21 @@ RaidClockLearn(txt) {
     if left >= 3600
         return false
     ofs := Mod(Integer(A_Min) * 60 + Integer(A_Sec) + left, 3600)
-    d := Abs(ofs - raidOfs), d := Min(d, 3600 - d)
-    if d > 30 {
+    Near(a, b) => Min(Abs(a - b), 3600 - Abs(a - b)) <= 30
+    if Near(ofs, raidOfs) {
+        raidCand := -1                                    ; the time in use is confirmed - a stray earlier reading is dropped
+        return true
+    }
+    ; a new time only when two readings agree: 6.11 22:03 OCR read "Raid Opens in: 41:28" as "4:28", the bot took the raid
+    ; for 22:08, left Infinity for it and the next read said :45 again
+    static candAt := 0
+    if raidCand < 0 || !Near(ofs, raidCand) || A_TickCount - candAt > 20 * 60000 {
+        raidCand := ofs, candAt := A_TickCount
+        Log("  raid clock: read '" Trim(SubStr(txt, 1, 60)) "' (opens at :" Format("{:02}:{:02}", ofs // 60, Mod(ofs, 60)) ") - waiting for a second reading")
+        return true
+    }
+    raidCand := -1
+    if true {
         Log("raid clock: this server's raid opens at :" Format("{:02}:{:02}", ofs // 60, Mod(ofs, 60))
             . " (read '" Trim(SubStr(txt, 1, 60)) "', was :" Format("{:02}:{:02}", raidOfs // 60, Mod(raidOfs, 60)) ")")
         raidOfs := ofs
@@ -1012,6 +1028,13 @@ PickTarget(&why) {
     infOn := cfg["infinity"] = "1"
     if raidOn && SecOfHour() >= MinSec(cfg["infStop"], 57 * 60 + 30) {
         why := "the hour is ending, going for the raid"
+        return "raid"
+    }
+    ; 6.11 22:03: the raid clock said the raid opens in 4:28 and the bot still went into Infinity, only to leave it again at
+    ; infStop. Outside a fight with the raid this close, go to the raid world and wait at its Create screen instead.
+    if raidOn && !fightSince && MinSec(cfg["infStop"], 57 * 60 + 30) - SecOfHour() <= RAID_SOON
+            && MinSec(cfg["infStop"], 57 * 60 + 30) - SecOfHour() > 0 {
+        why := "the raid opens in under " (RAID_SOON + 150) // 60 " min - not starting Infinity"
         return "raid"
     }
     if raidOn && RaidMin() < RAID_WINDOW && raidDoneKey != RaidHourKey() {
@@ -1089,7 +1112,8 @@ Step() {
         || FindImg("enemies_left.png", &x, &y, b[1], b[2], b[3], b[4], "*80 *TransFF00FF")
     ; the game's AUTO button is a fight too (see FightHud): ENEMIES LEFT misses on bright floors, and with it on screen
     ; a PLAY match is a white AOE flash, not the lobby
-    global hudSeen := FightHud()
+    global hudSeen := FightHud(), tickNo
+    tickNo++
     inFight := inFight || hudSeen
     ; виходимо з Infinity на рейд, а ми вже в лобі (видно PLAY): це не бій. 29.10 22:00 і 23:00 бот після LEAVE
     ; у лобі 12 min тиснув Esc-R-Enter - на меню Esc хибно "бачив" ENEMIES LEFT, "липкий" бій не закінчувався
@@ -1099,7 +1123,7 @@ Step() {
     if !hudSeen && (lastEntered = "infinity" && goal != "infinity" || cfg["bossAuto"] = "1" && BossFight()
             || !fightSince || A_TickCount - fightSince < 20000)
             && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
-            && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
+            && LobbyPlay() {
         if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000
             SetStatus("lobby (PLAY visible) - not a fight, not pressing Esc-R-Enter")
         inFight := false
@@ -1559,7 +1583,7 @@ Step() {
     ; modes menu: the RAID card shows this server's countdown just above its title ("Raid Opens in: 24:37") - learn the raid
     ; clock from it (at most every 2 min); a new goal from it applies on the next tick
     static clockAt := 0
-    if cfg["raid"] = "1" && A_TickCount - clockAt > 120000 && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
+    if cfg["raid"] = "1" && A_TickCount - clockAt > (raidCand >= 0 ? 4000 : 120000) && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
         clockAt := A_TickCount
         if RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30]))
             return
@@ -2139,8 +2163,10 @@ EnsureLoadout(n, onlyCheck := false) {
         Sleep 1500
         ; одразу після перемикання кнопка часом не читається (28.10 21:40: "Switched to Loadout 3" був,
         ; а OCR - порожньо) - ще кілька спроб
-        Loop 4 {
-            if cur := ReadLoadout()
+        ; 6.11 21:59 / 22:06: "Switched to Loadout 3" was on screen, but the button still read the old number for a moment
+        ; and the first read was taken - wait for the new number itself (up to ~5 s)
+        Loop 7 {
+            if (cur := ReadLoadout()) = n
                 break
             Sleep 700
         }

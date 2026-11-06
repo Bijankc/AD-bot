@@ -41,6 +41,24 @@ AutoOnVisible() {
 ; not match for 90 s -> Esc, window crosses and Roblox restarts mid-fight. Checked on 98 screenshots of that night: the letters
 ; are always there in a fight. Around the letters the diamond is dark red, black in the flash or purple (ON) - never white,
 ; so a white blob that also fits the letters is rejected (2 of the points must not be white).
+; The lobby for sure: PLAY with no AUTO button, on 3 ticks in a row (each within 3 s of the last). 6.11 22:04 one frame of a
+; flash still read as "lobby" with FightHud in place; the real lobby stays for seconds, a flash does not. Several calls in the
+; same tick (Step and AutoRunOn) count once.
+LobbyPlay() {
+    static streak := 0, at := 0, lastTick := -1, lastRes := false
+    if tickNo = lastTick
+        return lastRes
+    lastTick := tickNo
+    if hudSeen || !FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
+        streak := 0
+        return lastRes := false
+    }
+    if A_TickCount - at > 3000
+        streak := 0
+    at := A_TickCount, streak++
+    return lastRes := streak >= 3
+}
+
 AUTO_ON_PTS := [[-6, 3], [70, 3], [32, -18], [32, 24]]     ; around the "AUTO ON" letters (63x9), same idea as AUTO_OFF_PTS
 FightHud() {
     b := AutoBox()
@@ -67,7 +85,7 @@ AutoRunOn(rawFight) {
         return rawFight
     ; lobby: the run is over (or never began); ENEMIES LEFT seen here is a false hit. Not while the AUTO button shows: then
     ; "PLAY" is a white flash in the fight (hudSeen - this tick's FightHud, see Step)
-    if !hudSeen && FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
+    if LobbyPlay() {
         if fightSince
             AutoRunEnd()
         return false
