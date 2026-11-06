@@ -46,6 +46,24 @@ GAME_BAR_EXTRA := Round(58 * A_ScreenDPI / 96) - 58   ; 0 at 100%, 29 at 150%
 GAME_H += GAME_BAR_EXTRA
 SCR_W := 1920, SCR_H := 1080             ; the "screen" all coordinates are measured on
 GAME_X := 0, GAME_Y := 23 - GAME_BAR_EXTRA   ; where the top left corner of the Roblox client area must be
+
+; The scale that matters is the one of the monitor Roblox is on (6.11: the bot was started while an external 100% monitor
+; was the screen, set Roblox to 1017, then the laptop's 150% screen came back - the bar and the window no longer matched).
+; Roblox is per-monitor DPI aware, so the DPI of its window is exactly what its top bar is scaled by. Called every tick.
+GameGeometry() {
+    global GAME_BAR_EXTRA, GAME_H, GAME_Y
+    if !(hwnd := WinExist(GAME))
+        return
+    dpi := 0
+    try dpi := DllCall("GetDpiForWindow", "ptr", hwnd, "uint")
+    if dpi < 96
+        return
+    extra := Round(58 * dpi / 96) - 58
+    if extra = GAME_BAR_EXTRA
+        return
+    GAME_BAR_EXTRA := extra, GAME_H := 1017 + extra, GAME_Y := 23 - extra
+    Log("Roblox is on a " Round(dpi / 96 * 100) "% screen: the window will be " GAME_W "x" GAME_H " at " GAME_X "," GAME_Y)
+}
 ENEMIES_BOX := [1700, 780, 1920, 900]    ; де шукати напис ENEMIES LEFT (є лише в бою)
 ; де напис стоїть зазвичай (лівий верхній кут). Спершу шукаємо лише тут: у широкій рамці ImageSearch
 ; бере перший збіг, а рожева стіна (178,106,94) з допуском *80 теж "схожа" на літери - її відкидає
@@ -675,6 +693,7 @@ SetupChecks(deep := false) {
             Add("Text recognition (OCR) failed", "fail", "Windows Settings > Time & Language > Language & region: add English (United States), restart the PC.")
     }
     if hwnd := WinExist(GAME) {
+        GameGeometry()
         WinGetClientPos &cx, &cy, &cw, &ch, GAME
         Log("  setup: Roblox client area " cw "x" ch " at " cx "," cy)
         if WinGetMinMax(GAME) = -1
@@ -887,6 +906,7 @@ Tick() {
             return
         }
         noGameSince := 0
+        GameGeometry()                                    ; the monitor (and its scale) may have changed
         if !WinActive(GAME) {
             WinActivate GAME
             Sleep 300
