@@ -46,6 +46,7 @@ GAME_BAR_EXTRA := Round(58 * A_ScreenDPI / 96) - 58   ; 0 at 100%, 29 at 150%
 GAME_H += GAME_BAR_EXTRA
 SCR_W := 1920, SCR_H := 1080             ; the "screen" all coordinates are measured on
 GAME_X := 0, GAME_Y := 23 - GAME_BAR_EXTRA   ; where the top left corner of the Roblox client area must be
+AUTO_BTN := [738, 852]                   ; кнопка AUTO над скілами в бою (автобій гри); FightHud / AutoBox
 
 ; The scale that matters is the one of the monitor Roblox is on (6.11: the bot was started while an external 100% monitor
 ; was the screen, set Roblox to 1017, then the laptop's 150% screen came back - the bar and the window no longer matched).
@@ -322,8 +323,10 @@ if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: ли�
 #Include auto_boss.ahk
 #Include rewards.ahk
 
-if A_Args.Length                                        ; "start" or "fight" - start at once, without F1
-    Start()
+; "start" or "fight" - start without F1. Not right here: the rest of this file (screen points such as AUTO_BTN once lived
+; below) must run first - 7.11 00:17 a "start" launch called "lobby" 2 s in, mid-fight, the first ticks ran on a half-set bot
+if A_Args.Length
+    SetTimer(Start, -2000)
 
 F1:: Start()
 F2:: Stop()
@@ -544,7 +547,7 @@ CamPx() => Min(8000, Max(20, Round(205 * 36 / Max(1, Num("camSens", 36)))))
 ; зі знімка 26.10 19:02 (лівий верхній кут слова ~(400, 540)); напис "підстрибує", тому пробуємо зсуви ±12 px.
 ; На 30 знімках рейду: є Combo - збіг 0.32..1.0, немає - 0 (огляд арени, Infinity - теж 0). Поріг 0.25.
 COMBO_ORG := [400, 540]
-AUTO_BTN := [738, 852]                                    ; кнопка AUTO над скілами в рейді (автобій гри)
+; AUTO_BTN is defined at the top (with the other screen points): FightHud needs it from the first tick
 ; ENEMIES LEFT: число червоне на темно-червоному, OCR його не читає - порівнюємо відбиток цифри (EnemiesSig)
 ENEMIES_NUM := [1842, 846, 48, 36]
 lastAuto := 0, autoOffAt := 0                              ; коли тиснули Auto / коли його вимкнути вдруге
