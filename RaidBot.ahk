@@ -94,6 +94,7 @@ BAG_CLOSE    := [1455, 219]
 ; Кожен персонаж - раз на тиждень (використані затемнені), режим - раз на 30 min.
 SPEED_LAST_MIN  := 52                    ; після цієї minилини не починаємо (рейд о :00; бос гине за 1-2 min)
 SPEED_EVERY     := 30 * 60               ; с між забігами
+SPEED_MAX       := 12 * 60000            ; a Speed Raid still on after this long is left (restart) - see Step
 SPEED_READY_BOX := [920, 872, 200, 32]   ; "Ready to enter" / "Ready in 00:01:13" над карткою в меню режимів
 MODES_CLOSE     := [1490, 200]           ; хрестик меню режимів
 SPEED_TITLE_BOX := [400, 200, 520, 65]   ; заголовок вікна: "Speed Raid" / "Select a Character"
@@ -1204,6 +1205,16 @@ Step() {
             if !raidShotDone && autoBtnAt && A_TickCount - autoBtnAt > 3000 {    ; the Auto button is gone: the end screen is up
                 raidShotDone := true
                 Screenshot(lastEntered = "speed" ? "speed_end" : "raid_end")
+            }
+            ; 6.11 22:12: a Speed Raid boss (Shadow Yomiichi, 584M HP) ran 20+ min - the character kept dying - and would have
+            ; run through the raid; a run has no exit but closing the game
+            if lastEntered = "speed" && fightSince && (A_TickCount - fightSince > SPEED_MAX
+                    || goal = "raid" && A_TickCount - fightSince > 180000) {          ; the hourly raid is worth more
+                Log("Speed Raid: still fighting after " (A_TickCount - fightSince) // 60000 " min"
+                    . (goal = "raid" ? " and the raid is due" : "") " - leaving it (restart)")
+                Screenshot("speed_long")
+                RestartRoblox("Speed Raid takes too long", , 60000)
+                return
             }
             if inFight && RespawnScreen()
                 SetStatus("death: waiting for respawn (Auto stays on)")
