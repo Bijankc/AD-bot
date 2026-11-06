@@ -1601,8 +1601,15 @@ Step() {
     static clockAt := 0
     if cfg["raid"] = "1" && A_TickCount - clockAt > (raidCand >= 0 ? 4000 : 120000) && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
         clockAt := A_TickCount
-        if RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30]))
+        if RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30])) {
+            ; a new time needs a second reading: take it now, the menu is usually gone by the next tick (after a Roblox
+            ; restart the server - and its raid time - is new, and the next menu visit may come after the raid)
+            if raidCand >= 0 {
+                Sleep 1500
+                RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30]))
+            }
             return
+        }
     }
     if goal = "infinity" && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
         if MenuLoadoutWrong(2)
