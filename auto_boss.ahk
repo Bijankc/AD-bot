@@ -13,10 +13,16 @@ AutoReset() {
 }
 
 AutoBox() => [AUTO_BTN[1] - 60, AUTO_BTN[2] - 60, AUTO_BTN[1] + 60, AUTO_BTN[2] + 60]
+; Where each set of letters may be: a few px around where they sit (OFF "AUTO" 48x12 at 714,840, ON "AUTO ON" 63x9 at
+; 706,842 on the 1920x1017 layout), all inside the diamond. 7.11 02:27: in the old 120x120 box the white floor at the box's
+; corner matched the white letters first (ImageSearch returns the first hit), the non-white check rejected it and the real
+; button was never looked at - "lobby" and LEAVE mid-fight on bright floors.
+LetterBox(name) => name = "auto_on.png" ? [AUTO_BTN[1] - 38, AUTO_BTN[2] - 16, AUTO_BTN[1] + 37, AUTO_BTN[2] + 5]
+                                        : [AUTO_BTN[1] - 32, AUTO_BTN[2] - 18, AUTO_BTN[1] + 32, AUTO_BTN[2] + 6]
 
 ; OFF button visible near AUTO_BTN: letters match and the diamond around them is red
 AutoOffVisible() {
-    b := AutoBox()
+    b := LetterBox("auto_off.png")
     if !FindImg("auto_off.png", &x, &y, b[1], b[2], b[3], b[4])
         return false
     ; "AUTO" also fits inside "AUTO ON" (6.11 22:52 both matched on the same frame): ON is never off - a click would turn it off
@@ -34,7 +40,7 @@ AutoOffVisible() {
 }
 
 AutoOnVisible() {
-    b := AutoBox()
+    b := LetterBox("auto_on.png")
     return FindImg("auto_on.png", &x, &y, b[1], b[2], b[3], b[4])
 }
 
@@ -65,10 +71,11 @@ LobbyPlay() {
 
 ; what FightHud sees right now, for the log when a fight is about to be called off
 FightHudWhy() {
-    b := AutoBox(), s := "box " b[1] "," b[2] "-" b[3] "," b[4]
+    s := ""
     for it in [["auto_off.png", AUTO_OFF_PTS], ["auto_on.png", AUTO_ON_PTS]] {
+        b := LetterBox(it[1])
         f := FindImg(it[1], &x, &y, b[1], b[2], b[3], b[4])
-        s .= "; " it[1] " " (f ? "at " x "," y : "no")
+        s .= (s = "" ? "" : "; ") it[1] " " (f ? "at " x "," y : "no")
         if f
             for p in it[2]
                 s .= " " Format("{:06X}", PixelGetColor(x + p[1], y + p[2]))
@@ -78,8 +85,8 @@ FightHudWhy() {
 
 AUTO_ON_PTS := [[-6, 3], [70, 3], [32, -18], [32, 24]]     ; around the "AUTO ON" letters (63x9), same idea as AUTO_OFF_PTS
 FightHud() {
-    b := AutoBox()
     for it in [["auto_off.png", AUTO_OFF_PTS], ["auto_on.png", AUTO_ON_PTS]] {
+        b := LetterBox(it[1])
         if !FindImg(it[1], &x, &y, b[1], b[2], b[3], b[4])
             continue
         n := 0
