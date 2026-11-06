@@ -1836,6 +1836,10 @@ FindImg(name, &x, &y, x1 := 0, y1 := 0, x2 := SCR_W, y2 := SCR_H, opts := "") {
     alt := IMGDIR StrReplace(name, ".png", "_2.png")
     if !found && FileExist(alt)
         try found := ImageSearch(&x, &y, x1, y1, x2, y2, opts " " alt)
+    ; "_3": a second variant (7.11: card_gem_2.png was already taken, the 150% screen needed one more)
+    alt := IMGDIR StrReplace(name, ".png", "_3.png")
+    if !found && FileExist(alt)
+        try found := ImageSearch(&x, &y, x1, y1, x2, y2, opts " " alt)
     if found && BORDER.Has(name) && !BorderOk(name, x, y) {
         Log("  " name ": matched a blob of letter colour, ignoring")
         return false
