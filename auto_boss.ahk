@@ -63,6 +63,19 @@ LobbyPlay() {
     return lastRes := streak >= 3
 }
 
+; what FightHud sees right now, for the log when a fight is about to be called off
+FightHudWhy() {
+    b := AutoBox(), s := "box " b[1] "," b[2] "-" b[3] "," b[4]
+    for it in [["auto_off.png", AUTO_OFF_PTS], ["auto_on.png", AUTO_ON_PTS]] {
+        f := FindImg(it[1], &x, &y, b[1], b[2], b[3], b[4])
+        s .= "; " it[1] " " (f ? "at " x "," y : "no")
+        if f
+            for p in it[2]
+                s .= " " Format("{:06X}", PixelGetColor(x + p[1], y + p[2]))
+    }
+    return s
+}
+
 AUTO_ON_PTS := [[-6, 3], [70, 3], [32, -18], [32, 24]]     ; around the "AUTO ON" letters (63x9), same idea as AUTO_OFF_PTS
 FightHud() {
     b := AutoBox()

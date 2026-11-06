@@ -1128,8 +1128,10 @@ Step() {
             || !fightSince || A_TickCount - fightSince < 20000)
             && (inFight || A_TickCount - lastFight < FIGHT_STICKY)
             && LobbyPlay() {
-        if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000
+        if inFight || A_TickCount - lastFight < FIGHT_STICKY - 1000 {
             SetStatus("lobby (PLAY visible) - not a fight, not pressing Esc-R-Enter")
+            Log("  lobby check: hudSeen " hudSeen ", FightHud now " FightHud() " (" FightHudWhy() ")")
+        }
         inFight := false
         lastFight := A_TickCount - FIGHT_STICKY
     }
