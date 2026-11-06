@@ -1760,6 +1760,7 @@ LeaveInfinity() {
         if A_TickCount - shotAt > 600000 {                ; what the LEAVE match saw (at most every 10 min) - to check it later
             shotAt := A_TickCount
             Screenshot("leave")
+            Log("  LEAVE at " x "," y ": hudSeen " hudSeen ", FightHud now " FightHud() " (" FightHudWhy() ")")
         }
         SetStatus("Infinity results: pressing LEAVE")
         ClickXY(x + 90, y + 24)
