@@ -19,6 +19,9 @@ AutoOffVisible() {
     b := AutoBox()
     if !FindImg("auto_off.png", &x, &y, b[1], b[2], b[3], b[4])
         return false
+    ; "AUTO" also fits inside "AUTO ON" (6.11 22:52 both matched on the same frame): ON is never off - a click would turn it off
+    if AutoOnVisible()
+        return false
     ; the OFF diamond is red - or almost black (0x1F120F): 6.11 22:12-22:28 a Speed Raid ran 16 min with Auto off on the dark
     ; diamond, the bot never pressed it (it waited for red) and the character only died; one click turned it ON. Anything
     ; but white counts (a white blob that fits the letters is what this guards against)
