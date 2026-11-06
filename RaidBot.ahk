@@ -1714,7 +1714,12 @@ Step() {
 ; 3 натискання не допомогли - перезапуск гри
 LeaveInfinity() {
     global lastReset, lastFight
-    static leaveAt := 0, leaveN := 0
+    static leaveAt := 0, leaveN := 0, shotAt := 0
+    ; 7.11 00:07-00:16: "pressing LEAVE" six times in the middle of Infinity fights (the fight went on each time; 3 within
+    ; a minute would have restarted Roblox). On the real results screen the overlay hides the AUTO button (checked on the
+    ; 6.11 results shot: 0 of 205 letter pixels), in a fight it is always there - so no LEAVE while it shows
+    if hudSeen
+        return false
     if !FindImg("leave.png", &x, &y, 1000, 680, 1450, 840) && !FindImg("leave.png", &x, &y, 1000, 680, 1450, 840, "*110 *TransFF00FF") {
         ; the button is translucent, so its colour depends on the scene behind (3.11: the template missed it and the game's
         ; AUTO RETRY looped Infinity for hours). Fallback: the light REWARDS panel, confirmed by OCR, then click the fixed LEAVE spot
@@ -1747,6 +1752,10 @@ LeaveInfinity() {
         }
         leaveAt := A_TickCount
         ReleaseKeys()
+        if A_TickCount - shotAt > 600000 {                ; what the LEAVE match saw (at most every 10 min) - to check it later
+            shotAt := A_TickCount
+            Screenshot("leave")
+        }
         SetStatus("Infinity results: pressing LEAVE")
         ClickXY(x + 90, y + 24)
         ParkMouse()
