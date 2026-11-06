@@ -33,6 +33,19 @@ TOLERANCE := 40
 ; 1.11 22:00 raid at client height 1027: the "Respawn in N" countdown was not seen at all and BossAhead scored 0.13 instead of 0.00 -
 ; the detectors were calibrated at 1017 (taskbar 40 px), so that is the one size we use, +-2 px.
 GAME_W := 1920, GAME_H := 1017
+; Device port (2560x1440 at 150%): every coordinate in this file is measured on the author's 1920x1080 screen with the
+; Roblox client area at (0, 23). On a bigger screen the bot keeps Roblox at exactly that place and size and treats
+; this 1920x1080 rectangle as "the screen" - searches, screenshots and checks never look at the desktop around it.
+; Measured 6.11 on 2560x1440 at 150%: Roblox scales its own top bar with Windows (58 px -> 87 px), and Anime Dimensions
+; sizes its interface from the client height MINUS that bar - at 1920x1017 PLAY was 156x39 instead of the template's
+; 164x41 and never matched. So the client is made taller by the extra bar height and moved up by the same amount:
+; 1920x1046 at (0, -6) -> the game's area below the bar is (0, 81)-(1920, 1040), exactly the author's, and PLAY
+; measured 162x41 (3692 white px vs 3682 in play.png). The title bar is then above the screen - that is expected.
+; At 100% the extra is 0 and everything is the author's original 1920x1017 at (0, 23).
+GAME_BAR_EXTRA := Round(58 * A_ScreenDPI / 96) - 58   ; 0 at 100%, 29 at 150%
+GAME_H += GAME_BAR_EXTRA
+SCR_W := 1920, SCR_H := 1080             ; the "screen" all coordinates are measured on
+GAME_X := 0, GAME_Y := 23 - GAME_BAR_EXTRA   ; where the top left corner of the Roblox client area must be
 ENEMIES_BOX := [1700, 780, 1920, 900]    ; де шукати напис ENEMIES LEFT (є лише в бою)
 ; де напис стоїть зазвичай (лівий верхній кут). Спершу шукаємо лише тут: у широкій рамці ImageSearch
 ; бере перший збіг, а рожева стіна (178,106,94) з допуском *80 теж "схожа" на літери - її відкидає
@@ -442,7 +455,7 @@ ReadLootNumber(x, y) {
 RotateCam(px) {
     global camYaw
     camYaw += px
-    MouseMove A_ScreenWidth // 2, A_ScreenHeight // 2 + 150, 0
+    MouseMove SCR_W // 2, SCR_H // 2 + 150, 0
     Send "{RButton down}"
     Sleep 60
     n := Max(1, Abs(px) // 60)                           ; дрібними кроками - Roblox краще сприймає
@@ -625,19 +638,18 @@ FlushRun() {
 SetupChecks(deep := false) {
     r := []
     Add := (name, state, fix := "") => r.Push({name: name, state: state, fix: fix})
-    if A_ScreenWidth = 1920 && A_ScreenHeight = 1080
-        Add("Screen resolution 1920x1080", "ok")
+    ; device port: any screen at least 1920x1080 works - Roblox is kept at 1920x1017 in the top left corner
+    if A_ScreenWidth >= SCR_W && A_ScreenHeight >= SCR_H
+        Add("Screen resolution " A_ScreenWidth "x" A_ScreenHeight " (game area " SCR_W "x" SCR_H ")", "ok")
     else
-        Add("Screen resolution is " A_ScreenWidth "x" A_ScreenHeight, "fail", "Right-click the desktop > Display settings > Display resolution: choose 1920 x 1080.")
-    if A_ScreenDPI = 96
-        Add("Windows display scale 100%", "ok")
-    else
-        Add("Windows display scale is " Round(A_ScreenDPI / 96 * 100) "%", "fail", "Right-click the desktop > Display settings > Scale: choose 100%, then sign out and sign in again.")
+        Add("Screen resolution is " A_ScreenWidth "x" A_ScreenHeight, "fail", "Right-click the desktop > Display settings > Display resolution: at least 1920 x 1080.")
+    ; Windows scale does not matter: the bot works in real pixels and Roblox draws in real pixels
+    Add("Windows display scale " Round(A_ScreenDPI / 96 * 100) "%", "ok")
     MonitorGetWorkArea(MonitorGetPrimary(), &wl, &wt, &wr, &wb)
-    if wl = 0 && wt = 0 && wr = A_ScreenWidth
-        Add("Taskbar at the bottom", "ok")
+    if wl = 0 && wt = 0 && wr = A_ScreenWidth && wb >= GAME_Y + GAME_H
+        Add("Taskbar at the bottom, below the game area", "ok")
     else
-        Add("Taskbar is not at the bottom", "warn", "Right-click the taskbar > Taskbar settings > Taskbar location on screen: Bottom.")
+        Add("Taskbar is not at the bottom (or covers the game area)", "warn", "Right-click the taskbar > Taskbar settings > Taskbar location on screen: Bottom.")
     if FileExist(A_ScriptDir "\ocr.ps1") && FileExist(IMGDIR "start.png")
         Add("Bot files (ocr.ps1, img folder)", "ok")
     else
@@ -662,8 +674,8 @@ SetupChecks(deep := false) {
             Add("Roblox is minimised", "fail", "Click the Roblox icon on the taskbar to open it, then maximise the window.")
         else if !(WinGetStyle(GAME) & 0xC00000)
             Add("Roblox is in fullscreen (F11)", "fail", "Press F11 in Roblox to leave fullscreen, then double-click the window title bar to maximise it.")
-        else if GameSizeOk(cw, ch)
-            Add("Roblox window size is right (" cw "x" ch ")", "ok")
+        else if GameSizeOk(cw, ch) && GamePosOk(cx, cy)
+            Add("Roblox window size is right (" cw "x" ch " at " cx "," cy ")", "ok")
         else if FitGameWindow()                           ; the bot sets the size itself
             Add("Roblox window was set to " GAME_W "x" GAME_H, "ok")
         else
@@ -874,7 +886,7 @@ Tick() {
         }
         ; усі координати розраховані на Roblox на весь основний монітор; якщо вікно переїхало
         ; (наприклад, після вимкнення/ввімкнення монітора) - повертаємо його
-        WinGetClientPos &cx, , &cw, &ch, GAME
+        WinGetClientPos &cx, &cy, &cw, &ch, GAME
         static fixTries := 0
         if GameSizeOk(cw, ch)
             fixTries := 0
@@ -887,15 +899,16 @@ Tick() {
             fixTries++
             Log("WARNING: the Roblox window could not be set to " GAME_W "x" GAME_H " (now " cw "x" ch ") - screens may not be recognised")
         }
-        if cx != 0 || cw != A_ScreenWidth {
+        ; device port: the screen is wider than the game, so check the client position itself (x = 0, y = 23)
+        if cx != GAME_X || Abs(cy - GAME_Y) > 2 || cw != GAME_W {
             static badPos := 0, badSince := 0
             if A_TickCount - badSince > 60000
                 badPos := 0
             badPos++, badSince := A_TickCount
             if badPos > 4 {                                   ; taskbar on the left/right or a second monitor: moving does not help
-                Log("ERROR: the Roblox window cannot be placed at x=0 with the full screen width (client x=" cx ", w=" cw "). Put the taskbar at the bottom.")
+                Log("ERROR: the Roblox window cannot be placed at " GAME_X "," GAME_Y " (client " cx "," cy ", w=" cw "). Put the taskbar at the bottom.")
                 Stop()
-                MsgBox "Roblox cannot be placed correctly (client x=" cx ", width=" cw ").`n`nPut the Windows taskbar at the bottom of the screen and start the bot again.", "AD Bot", "Icon! T30"
+                MsgBox "Roblox cannot be placed correctly (client " cx "," cy ", width=" cw ").`n`nPut the Windows taskbar at the bottom of the screen and start the bot again.", "AD Bot", "Icon! T30"
                 return
             }
             SetStatus("moving Roblox back to the main monitor")
@@ -1486,7 +1499,7 @@ Step() {
         SpeedEnter(x, y)
         return
     }
-    if FindImg("raid_mode.png", &x, &y, 0, 860, A_ScreenWidth, 1000) {                                 ; меню режимів: у світ рейду
+    if FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {                                 ; меню режимів: у світ рейду
         if goal = "speed" {                                               ; картки SPEED RAID не впізнали
             Log("  modes menu: SPEED RAID not visible - postponing 10 min")
             Screenshot("speed_menu")
@@ -1629,7 +1642,7 @@ LeaveInfinity() {
 
 ; ------------------------ Допоміжні функції ------------------------
 ; знімок основного екрана в SHOTDIR (PNG через GDI+); понад SHOT_MAX найстаріші знімки видаляємо
-Screenshot(tag, sx := 0, sy := 0, w := A_ScreenWidth, h := A_ScreenHeight) {
+Screenshot(tag, sx := 0, sy := 0, w := SCR_W, h := SCR_H) {
     try {
         DirCreate SHOTDIR
         file := SHOTDIR FormatTime(, "yyyyMMdd_HHmmss") "_" tag ".png"
@@ -1675,7 +1688,7 @@ SaveRegion(file, sx, sy, w, h) {
     return -1
 }
 
-FindImg(name, &x, &y, x1 := 0, y1 := 0, x2 := A_ScreenWidth, y2 := A_ScreenHeight, opts := "") {
+FindImg(name, &x, &y, x1 := 0, y1 := 0, x2 := SCR_W, y2 := SCR_H, opts := "") {
     x := 0
     y := 0
     file := IMGDIR name
@@ -2546,6 +2559,7 @@ FixGameWindow() {
 }
 
 GameSizeOk(cw, ch) => cw = GAME_W && Abs(ch - GAME_H) <= 2
+GamePosOk(cx, cy) => cx = GAME_X && Abs(cy - GAME_Y) <= 2
 
 ; a normal (not maximised) window with the client area of exactly GAME_W x GAME_H at the top left of the screen
 FitGameWindow() {
@@ -2556,12 +2570,12 @@ FitGameWindow() {
     Loop 3 {                                              ; borders and the title bar are different on every Windows: measure and correct
         WinGetPos &wx, &wy, &ww, &wh, GAME
         WinGetClientPos &cx, &cy, &cw, &ch, GAME
-        WinMove wx + (0 - cx), wy + (23 - cy), ww + (GAME_W - cw), wh + (GAME_H - ch), GAME
+        WinMove wx + (GAME_X - cx), wy + (GAME_Y - cy), ww + (GAME_W - cw), wh + (GAME_H - ch), GAME
         Sleep 600
     }
     WinGetClientPos &cx, &cy, &cw, &ch, GAME
     Log("  Roblox window set: client " cw "x" ch " at " cx "," cy)
-    return GameSizeOk(cw, ch)
+    return GameSizeOk(cw, ch) && GamePosOk(cx, cy)
 }
 
 ; Сторінка гри в браузері -> перша кнопка Join (приватний сервер). true, якщо натиснули.
@@ -2574,21 +2588,26 @@ JoinFromBrowser() {
     if WinGetMinMax(BROWSER) != 1
         WinMaximize BROWSER
     Sleep 1500
-    b := JOIN_BOX
+    ; device port: the web page is scaled with Windows (150% -> everything 1.5x bigger) and laid out for a wider screen,
+    ; so the button can be anywhere across the page: search the whole width and scale the button size checks.
+    ; At 1920x1080 / 100% this is the author's narrow band and offsets exactly.
+    k := A_ScreenDPI / 96
+    b := A_ScreenWidth = SCR_W && k = 1 ? JOIN_BOX : [0, Round(JOIN_BOX[2] * k), A_ScreenWidth - 1, A_ScreenHeight - 1]
     Loop 2 {
         ; перший темно-синій піксель згори, але лише якщо це кнопка (200x32): той самий колір і правіше, і нижче
         y := b[2], found := false
         while y < b[4] && PixelSearch(&jx, &jy, b[1], y, b[3], b[4], JOIN_COLOR, 12) {
-            if SameColor(jx + 150, jy + 4, JOIN_COLOR, 20) && SameColor(jx + 2, jy + 26, JOIN_COLOR, 20) {
+            if SameColor(jx + Round(150 * k), jy + Round(4 * k), JOIN_COLOR, 20) && SameColor(jx + Round(2 * k), jy + Round(26 * k), JOIN_COLOR, 20) {
                 found := true
                 break
             }
             y := jy + 1
         }
         if found {
-            ClickXY(jx + 80, jy + 15)
+            jx += Round(80 * k), jy += Round(15 * k)
+            ClickXY(jx, jy)
             ParkMouse()
-            Log("  pressed Join in the browser (" jx + 80 ", " jy + 15 ")")
+            Log("  pressed Join in the browser (" jx ", " jy ")")
             return true
         }
         if A_Index = 1 {                                  ; сторінка могла застаріти - оновлюємо і пробуємо ще раз
@@ -2661,9 +2680,9 @@ NoSkill5() {
 ; майже весь екран чорний (сітка 5x5 точок темніша за 12)
 BlackScreen() {
     Loop 5 {
-        x := A_ScreenWidth * A_Index // 6
+        x := SCR_W * A_Index // 6                         ; device port: the game area, not the desktop around it
         Loop 5 {
-            c := Integer(PixelGetColor(x, A_ScreenHeight * A_Index // 6))
+            c := Integer(PixelGetColor(x, SCR_H * A_Index // 6))
             if (c >> 16 & 0xFF) > 12 || (c >> 8 & 0xFF) > 12 || (c & 0xFF) > 12
                 return false
         }
@@ -2673,7 +2692,7 @@ BlackScreen() {
 
 ; відводимо курсор у порожнє місце, щоб кнопки меню не підсвічувались від наведення
 ParkMouse() {
-    MouseMove 300, A_ScreenHeight // 2, 0
+    MouseMove 300, SCR_H // 2, 0
 }
 
 PngSize(file) {
@@ -2807,7 +2826,7 @@ Fight() {
         return
     if cfg["m1"] = "1" {
         SetStatus("M1", "M1")
-        MouseMove A_ScreenWidth // 2, A_ScreenHeight // 2, 0   ; щоб не клікнути по вікну бота
+        MouseMove SCR_W // 2, SCR_H // 2, 0   ; щоб не клікнути по вікну бота
         Click
     } else
         SetStatus("all skills on cooldown")

@@ -83,7 +83,9 @@ curPage := IniRead(INI, "ui", "page", "home")
 if !InStr(" home modes m_raid m_speed m_inf stats look ", " " curPage " ")
     curPage := "home"
 
-g := Gui("+AlwaysOnTop -Caption", "AD Bot")
+; -DPIScale: PW/PH are already real pixels (UI_K includes the Windows scale); with DPI scaling on, Show scaled them
+; again at 150% and made an invisible 2250x1440 window behind the 1500x960 one
+g := Gui("+AlwaysOnTop -Caption -DPIScale", "AD Bot")
 g.BackColor := C.bg
 g.MarginX := 0, g.MarginY := 0
 uiBmp := 0                                                     ; last finished frame (HBITMAP), blitted straight onto the window
@@ -146,8 +148,16 @@ Layout() {
     if running {
         g.Hide()
         mini.Show("x0 y24 AutoSize NoActivate")
-        mini.GetPos(, , &mw, &mh)
-        mini.Move((A_ScreenWidth - mw) // 2, 24)
+        ; real pixels: at Windows scale 150% mini.GetPos gives the size divided by 1.5 (548x31 for 822x46), which
+        ; put the strip off centre and cut its rounded region (below) to two thirds of the text
+        WinGetPos(, , &mw, &mh, "ahk_id " mini.Hwnd)
+        ; device port: on a screen taller than the game area the strip goes below the game (y >= SCR_H, which no
+        ; search or screenshot reaches), so it never covers anything the bot looks at; else the author's place at the top
+        MonitorGetWorkArea(MonitorGetPrimary(), , , , &wb)
+        if wb - SCR_H >= mh + 8
+            mini.Move(GAME_X + (GAME_W - mw) // 2, SCR_H + (wb - SCR_H - mh) // 2)
+        else
+            mini.Move((A_ScreenWidth - mw) // 2, 24)
         DllCall("SetWindowRgn", "ptr", mini.Hwnd, "ptr", DllCall("CreateRoundRectRgn", "int", 0, "int", 0, "int", mw + 1, "int", mh + 1, "int", 16, "int", 16, "ptr"), "int", 1)
         return
     }

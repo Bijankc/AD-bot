@@ -27,6 +27,14 @@
 - **Infinity:** between raids. The character stands still and uses the big AOE skills.
 - A short summary (raids, gems, tokens, Infinity runs, Roblox restarts) is written to the log when you stop the bot.
 
+## This fork: 2560x1440 at 150% scale
+
+This branch also runs on screens bigger than 1920x1080 and at Windows scale above 100% (tested on 2560x1440 at 150%).
+
+- Roblox is kept in the top left corner at the author's size. At 150% the window is 1920x1046 at y = -6, so its **title bar is above the screen on purpose**: Roblox's own top bar grows with the Windows scale and the game shrinks its interface to fit, so the window is made taller by that amount. The game's buttons then sit at exactly the pixels the bot's images were captured at.
+- Everything the bot looks at is the 1920x1080 area in the top left; the rest of the screen is ignored. The status strip sits below the game.
+- To check a PC, wait in the lobby and run `device_check.ahk`. It sets the window, saves `shots\device_check.png` and says whether the images match.
+
 ## What you need
 
 - Windows 10 / 11 and [AutoHotkey v2](https://www.autohotkey.com/)
