@@ -1598,8 +1598,12 @@ Step() {
     }
     ; modes menu: the RAID card shows this server's countdown just above its title ("Raid Opens in: 24:37") - learn the raid
     ; clock from it (at most every 2 min); a new goal from it applies on the next tick
+    ; The modes menu dims everything under it, PLAY included: PLAY still bright = the lobby, so a "card" seen now is a false
+    ; match (7.11 02:53: raid_mode.png matched the lobby's skill-bar text / a white orb, the bot "saw" the menu without
+    ; SPEED RAID and put the Speed Raid off for 10 min; 01:45 it clicked such a "card" in the lobby)
+    menuOk := !FindImg("play.png", &lx, &ly, 1500, 800, 1920, 1060)
     static clockAt := 0
-    if cfg["raid"] = "1" && A_TickCount - clockAt > (raidCand >= 0 ? 4000 : 120000) && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
+    if menuOk && cfg["raid"] = "1" && A_TickCount - clockAt > (raidCand >= 0 ? 4000 : 120000) && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
         clockAt := A_TickCount
         if RaidClockLearn(OcrRegion([x - 60, y - 30, 300, 30])) {
             ; a new time needs a second reading: take it now, the menu is usually gone by the next tick (after a Roblox
@@ -1611,7 +1615,7 @@ Step() {
             return
         }
     }
-    if goal = "infinity" && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
+    if menuOk && goal = "infinity" && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
         if MenuLoadoutWrong(2)
             return
         SetStatus("entering Dimension")
@@ -1620,13 +1624,13 @@ Step() {
         Sleep 1500
         return
     }
-    if goal = "speed" && FindImg("speed_mode.png", &x, &y, 700, 860, 1300, 1000) {  ; меню режимів: Speed Raid
+    if menuOk && goal = "speed" && FindImg("speed_mode.png", &x, &y, 700, 860, 1300, 1000) {  ; меню режимів: Speed Raid
         if MenuLoadoutWrong(3)
             return
         SpeedEnter(x, y)
         return
     }
-    if FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {                                 ; меню режимів: у світ рейду
+    if menuOk && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {                       ; меню режимів: у світ рейду
         if goal = "speed" {                                               ; картки SPEED RAID не впізнали
             Log("  modes menu: SPEED RAID not visible - postponing 10 min")
             Screenshot("speed_menu")
