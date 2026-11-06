@@ -19,14 +19,15 @@ AutoOffVisible() {
     b := AutoBox()
     if !FindImg("auto_off.png", &x, &y, b[1], b[2], b[3], b[4])
         return false
-    red := 0
+    ; the OFF diamond is red - or almost black (0x1F120F): 6.11 22:12-22:28 a Speed Raid ran 16 min with Auto off on the dark
+    ; diamond, the bot never pressed it (it waited for red) and the character only died; one click turned it ON. Anything
+    ; but white counts (a white blob that fits the letters is what this guards against)
+    ok := 0
     for p in AUTO_OFF_PTS {
         c := Integer(PixelGetColor(x + p[1], y + p[2]))
-        r := c >> 16 & 0xFF, gg := c >> 8 & 0xFF, bl := c & 0xFF
-        if r >= 100 && r - gg >= 40 && r - bl >= 40
-            red++
+        ok += Min(c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF) < 170
     }
-    return red >= 2
+    return ok >= 2
 }
 
 AutoOnVisible() {
