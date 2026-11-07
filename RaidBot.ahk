@@ -777,6 +777,7 @@ Stop() {
         Log(SessLogLine())
     sessStart := 0
     DllCall("SetThreadExecutionState", "uint", 0x80000000)
+    try WinSetAlwaysOnTop 0, GAME                         ; Tick keeps Roblox on top only while the bot runs
     PaintRun()
     SetStatus("stopped")
     Layout()
@@ -898,6 +899,11 @@ Log(text) {
     try FileAppend FormatTime(, "dd.MM HH:mm:ss") "." Format("{:03}", A_MSec) "  " text "`n", LOGFILE, "UTF-8"
 }
 
+WinTitleSafe() {
+    try return WinGetProcessName("A") " - " SubStr(WinGetTitle("A"), 1, 60)
+    return "?"
+}
+
 ; ----------------------- Головний цикл -----------------------
 Tick() {
     global busy, noGameSince
@@ -915,9 +921,31 @@ Tick() {
         }
         noGameSince := 0
         GameGeometry()                                    ; the monitor (and its scale) may have changed
+        ; 7.11 11:40: the user typed in VS Code over the game - Windows does not let a background program take the foreground,
+        ; the bot read VS Code as "screen not recognised", pressed Esc and clicked "window crosses" into it for 12 min,
+        ; restarted Roblox and missed the 11:45 raid. Roblox now stays on top while the bot runs (Stop clears it), and
+        ; when it still is not the active window the bot waits: keys would go to the other program.
+        try if !(WinGetExStyle(GAME) & 0x8)
+            WinSetAlwaysOnTop 1, GAME
         if !WinActive(GAME) {
             WinActivate GAME
             Sleep 300
+        }
+        if !WinActive(GAME) {
+            try DllCall("SwitchToThisWindow", "ptr", WinExist(GAME), "int", 1)
+            Sleep 300
+        }
+        static coveredLog := 0
+        if !WinActive(GAME) {
+            global unknownSince
+            if unknownSince                               ; the wait is not "screen not recognised" (no Esc, no restart)
+                unknownSince := A_TickCount
+            SetStatus("Roblox is not the active window - waiting (another program has the focus)")
+            if A_TickCount - coveredLog > 60000 {
+                coveredLog := A_TickCount
+                Log("WARNING: Roblox is not the active window (focus: " WinTitleSafe() ") - waiting")
+            }
+            return
         }
         ; усі координати розраховані на Roblox на весь основний монітор; якщо вікно переїхало
         ; (наприклад, після вимкнення/ввімкнення монітора) - повертаємо його
