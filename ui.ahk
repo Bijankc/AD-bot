@@ -1045,7 +1045,9 @@ PageInfinity() {
     Panel(CX, py, CWD, 200, "How the character fights")
     Tx("Infinity keeps its focus for late-end game", "ui", 11, 0, C.dim, CX + 20 + TxW("How the character fights", "title", 15, 1) + 14, py + 14, 320, 24)
     colw := (CWD - 40 - 24) // 2
-    TxP("The character stands still: enemies walk into the big AOE skills, all other skills are pressed as soon as they are ready.", "ui", 12, C.dim, CX + 20, py + 44, colw, 80)
+    TxP(cfg["infFullAuto"] = "1" ? "The game's Auto plays: the bot only keeps it on. The settings on the right are used only when Auto is off."
+        : "The character stands still: enemies walk into the big AOE skills, all other skills are pressed as soon as they are ready.", "ui", 12, C.dim, CX + 20, py + 44, colw, 70)
+    ToggleRow(CX + 20, py + 130, colw, "Game's Auto plays", "Off = the bot presses the skills", "infFullAuto")
     rx := CX + 20 + colw + 24
     TimeStepper(rx, py + 40, colw, "Leave Infinity at", "infStop", 30, 600, 3480, 57 * 60 + 30, "Author recommends 57:30")
     Stepper(rx, py + 92, colw, "Pause between AOE", "spreadMs", 500, 1000, 20000, 1000, "s", 7000, "Author recommends 7 s", false)

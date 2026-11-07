@@ -285,6 +285,7 @@ cfg := Map(
     "seekAfter",  IniRead(INI, "raid", "seekAfter", "5000"),    ; скільки ms без влучань, щоб почати пошук
     "camSens",    IniRead(INI, "raid", "camSens", "36"),          ; чутливість миші в грі x100 (0.36 -> 36): від неї залежить, на скільки px вести мишу для повороту камери
     "autoAfter",  IniRead(INI, "raid", "autoAfter", "0"),         ; рейд: стільки ms без Combo -> Auto (за замовчуванням вимкнено; детектор Combo бачить і AOE здалека)
+    "infFullAuto", IniRead(INI, "raid", "infFullAuto", "1"),      ; Infinity: the game's Auto plays the whole run, the bot only keeps it on (0 = the bot presses skills)
     "infAuto",    IniRead(INI, "raid", "infAuto", "15000"),       ; Infinity: число ENEMIES LEFT не змінюється стільки ms -> натиснути Auto (через 5 с ще раз, вимкнути); 0 = вимк.
     "seekWalk",   IniRead(INI, "raid", "seekWalk", "3000"),     ; після повороту пройти вперед, ms
     "skillsOff",  IniRead(INI, "raid", "skillsOff", ""),      ; вимкнені скіли через пробіл
@@ -1243,6 +1244,15 @@ Step() {
                 HoldKey("Enter")
                 lastReset := A_TickCount
             }
+            return
+        }
+        ; Infinity on the game's Auto (infFullAuto, user 7.11: "pressing Auto more than the bot's own moves"): no skills,
+        ; the game's Auto walks and fights; the bot only turns Auto back on when it is seen off (after a death or a wave)
+        if cfg["infFullAuto"] = "1" && lastEntered = "infinity" {
+            autoOffAt := 0                                  ; never the old "Auto for 5 s, then off"
+            if inFight && A_TickCount - fightSince > 2000
+                AutoEnsure()
+            SetStatus("Infinity: the game's Auto plays")
             return
         }
         ; Відлік "Respawn in N": персонаж мертвий - Combo немає, але це не промах. Камеру не крутимо, скілів не тиснемо.

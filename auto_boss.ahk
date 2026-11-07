@@ -28,6 +28,10 @@ AutoOffVisible() {
     ; "AUTO" also fits inside "AUTO ON" (6.11 22:52 both matched on the same frame): ON is never off - a click would turn it off
     if AutoOnVisible()
         return false
+    ; the OFF letters start at 714 (AUTO_BTN - 24), the "AUTO" of "AUTO ON" at 706: a match left of 710 is the ON button
+    ; whose "ON" a flash hid - clicking it would turn Auto off (matters with Infinity on Auto: clicks every run)
+    if x < AUTO_BTN[1] - 28
+        return false
     ; the OFF diamond is red - or almost black (0x1F120F): 6.11 22:12-22:28 a Speed Raid ran 16 min with Auto off on the dark
     ; diamond, the bot never pressed it (it waited for red) and the character only died; one click turned it ON. Anything
     ; but white counts (a white blob that fits the letters is what this guards against)
@@ -146,7 +150,7 @@ AutoEnsure() {
     global autoTries, autoAt, autoWinAt, autoFailLogged, autoOnLogged
     if A_TickCount - autoAt < 1500                         ; give the click time to show
         return
-    kind := lastEntered = "speed" ? "Speed Raid" : "raid"
+    kind := lastEntered = "speed" ? "Speed Raid" : lastEntered = "infinity" ? "Infinity" : "raid"
     if AutoOffVisible() {
         if autoTries && A_TickCount - autoWinAt > 30000
             autoTries := 0                                  ; max 3 tries per 30 s
