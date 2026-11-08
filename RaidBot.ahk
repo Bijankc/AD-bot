@@ -294,13 +294,16 @@ cfg := Map(
     "startBonus", IniRead(INI, "raid", "startBonus", "110"),    ; PARTY: бонус команди з якого % стартувати, не чекаючи startDelay
     "raid",       IniRead(INI, "raid", "raid", "1"),
     "infinity",   IniRead(INI, "raid", "infinity", "1"),
+    "titan",      IniRead(INI, "raid", "titan", "0"),            ; Giant (Titan) Dimension instead of Infinity, see titan.ahk
+    "titanDiff",  IniRead(INI, "raid", "titanDiff", "Nightmare"),  ; Easy, Hard or Nightmare
+    "titanHard",  IniRead(INI, "raid", "titanHard", "1"),        ; Hardcore toggle of the dimension: 3 lives, +1 reward
     "sfx",        IniRead(INI, "raid", "sfx", "1"),                 ; короткі звуки кнопок
     "infStop",    IniRead(INI, "raid", "infStop", "57:30"),      ; о котрій (хв:с) виходити з Infinity
     "createFrom", IniRead(INI, "raid", "createFrom", "59:30"),    ; з котрої (хв:с) тиснути Create у рейді
     "fightOnly",  "0")                                            ; тест: лише скіли (не зберігається)
 ; що бот востаннє створив ("raid" / "infinity") і в яку годину був рейд - щоб пам'ятати після перезапуску
 lastEntered := IniRead(INI, "state", "lastEntered", "")
-if !InStr(" raid infinity speed ", " " lastEntered " ")      ; an old raid.ini may hold the removed "dungeon"
+if !InStr(" raid infinity speed titan ", " " lastEntered " ")      ; an old raid.ini may hold the removed "dungeon"
     lastEntered := ""
 speedDue := IniRead(INI, "state", "speedDue", "")
 try DateDiff(speedDue, A_Now, "Seconds")                  ; a corrupt value would throw on every tick
@@ -323,6 +326,7 @@ if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: ли�
 #Include ui.ahk
 #Include auto_boss.ahk
 #Include rewards.ahk
+#Include titan.ahk
 
 ; "start" or "fight" - start without F1. Not right here: the rest of this file (screen points such as AUTO_BTN once lived
 ; below) must run first - 7.11 00:17 a "start" launch called "lobby" 2 s in, mid-fight, the first ticks ran on a half-set bot
@@ -758,6 +762,8 @@ Start() {
     StartupChecks()
     PlaceId()                                             ; поки гра запущена - запам'ятовуємо, куди перезаходити
     OcrServer()                                         ; OCR-сервер вантажиться заздалегідь
+    if !TitanHud()                                      ; a Shift Lock left on holds the cursor: menus could not be clicked
+        TitanLock(false)
     running := true
     PaintRun()
     Layout()
@@ -1081,6 +1087,10 @@ PickTarget(&why) {
     speedWhy := cfg["speed"] != "1" ? "Speed Raid is off"
         : speedDue && DateDiff(A_Now, speedDue, "Seconds") < 0 ? "next Speed Raid at " FormatTime(speedDue, "HH:mm")
         : "Speed Raid is not started after minute " SPEED_LAST_MIN " while the raid is on"
+    if cfg["titan"] = "1" {
+        why := speedWhy
+        return "titan"
+    }
     if infOn {
         why := speedWhy
         return "infinity"
@@ -1165,6 +1175,16 @@ Step() {
         lastFight := A_TickCount - FIGHT_STICKY
     }
     inFight := AutoRunOn(inFight)                         ; bossAuto: the raid / Speed Raid run stays one fight
+    ; Titan: no AUTO button in Dimensions, the whole run is played by titan.ahk. PLAY on screen = a false "fight" in the lobby
+    if lastEntered = "titan" {
+        global titanArmed
+        if titanArmed && A_TickCount - titanArmed > 90000
+            titanArmed := 0
+        if (inFight || TitanHud()) && !FindImg("play.png", &px, &py, 1500, 800, 1920, 1060) {
+            TitanRun(titanArmed != 0)
+            return
+        }
+    }
     if inFight {
         partySince := 0
         lastFight := A_TickCount
@@ -1493,7 +1513,9 @@ Step() {
         FlushRun()                                                        ; попередній забіг - у суми
         infLootDone := false, raidShotDone := false
         lastDmg := "", dmgChanged := A_TickCount, searchTurns := 0, sameReads := 0   ; новий бій - шкоду рахуємо заново
-        Stat(lastEntered = "raid" ? "raids" : "infRuns")                ; ще один забіг у статистику
+        if lastEntered = "titan"
+            titanArmed := A_TickCount
+        Stat(lastEntered = "raid" ? "raids" : lastEntered = "titan" ? "titanRuns" : "infRuns")                ; ще один забіг у статистику
         raidWalkDue := true                                              ; у новому бою знову підійдемо до боса
         AutoReset()
         learnLeft := 30, comboSeen := false, lastCombo := 0
@@ -1509,6 +1531,10 @@ Step() {
     }
     partySince := 0
     if FindImg("create_final.png", &x, &y) {                              ; налаштування рейду / данжу
+        if goal = "titan" && lastEntered = "titan" {
+            TitanCreate(x, y)
+            return
+        }
         ; соло-рейд: toggle Friends Only - ліворуч від кнопки Create, у тому ж рядку
         if lastEntered = "raid" && cfg["soloRaid"] = "1" && !friendsDone {
             friendsDone := true
@@ -1562,6 +1588,11 @@ Step() {
     hasRaid := rd[1] != "" && FindImg(rd[1], &rx, &ry)
     hasHal := hasRaid || FindImg("halloween.png", &hx, &hy)               ; Halloween є в усіх списках рейдів
     hasInf := FindImg("infinite.png", &ix, &iy)
+    if goal = "titan" && lastEntered = "titan" && (hasInf || hasHal) {
+        if PickTitan()
+            Sleep 1500
+        return
+    }
     if hasRaid && goal = "raid" {
         SetStatus("selecting " rd[3])
         SetEntered("raid")
@@ -1627,6 +1658,10 @@ Step() {
             Sleep 1500
         }
         ; 4.11: the Halloween Dimension event card pushed Infinite Mode down and infinite.png stopped matching - pick it by name
+        if goal = "titan" && PickTitan() {
+            Sleep 1500
+            return
+        }
         if goal = "infinity" && PickInfinity() {
             SetEntered("infinity")
             friendsDone := false
@@ -1653,10 +1688,12 @@ Step() {
             return
         }
     }
-    if menuOk && goal = "infinity" && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
+    if menuOk && (goal = "infinity" || goal = "titan") && FindImg("dimension.png", &x, &y, 260, 880, 620, 990) {   ; меню режимів: у данжі (лише білі літери DIMENSION)
         if MenuLoadoutWrong(2)
             return
         SetStatus("entering Dimension")
+        if goal = "titan"
+            SetEntered("titan")
         ClickImg("dimension.png", x, y)
         ParkMouse()
         Sleep 1500
@@ -1694,7 +1731,7 @@ Step() {
             Log("lobby after Infinity was cut off")
             Screenshot("inf_lobby")
         }
-        if goal = "raid" || goal = "infinity" || goal = "speed" {   ; перед входом - потрібний loadout (рейд 1, Infinity 2, Speed 3)
+        if goal = "raid" || goal = "infinity" || goal = "speed" || goal = "titan" {   ; перед входом - потрібний loadout (рейд 1, Infinity 2, Speed 3)
             if cfg["loadouts"] != "1"
                 CheckLoadoutOnce()                                        ; перемикання вимкнене - лише читаємо, що стоїть
             EnsureLoadout(goal = "raid" ? 1 : goal = "speed" ? 3 : 2)

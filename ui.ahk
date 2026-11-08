@@ -80,7 +80,7 @@ uiLog := []                              ; last log lines shown in the bottom pa
 dRaid := "", dSpeed := "", dGoal := "", dDone := ""
 layoutMons := 0
 curPage := IniRead(INI, "ui", "page", "home")
-if !InStr(" home modes m_raid m_speed m_inf stats look ", " " curPage " ")
+if !InStr(" home modes m_raid m_speed m_inf m_titan stats look ", " " curPage " ")
     curPage := "home"
 
 ; -DPIScale: PW/PH are already real pixels (UI_K includes the Windows scale); with DPI scaling on, Show scaled them
@@ -203,7 +203,7 @@ UiCompute() {
     dSpeed := cfg["speed"] != "1" ? "—" : sLeft <= 0 ? "ready"
         : sLeft >= 3600 ? Round(sLeft / 3600) " h" : Format("{:02}:{:02}", sLeft // 60, Mod(sLeft, 60))
     goal := cfg["fightOnly"] = "1" ? "fight" : Target()
-    dGoal := goal = "raid" ? "Raid" : goal = "speed" ? "Speed" : goal = "infinity" ? "Infinity" : goal = "fight" ? "Fight" : "—"
+    dGoal := goal = "raid" ? "Raid" : goal = "speed" ? "Speed" : goal = "infinity" ? "Infinity" : goal = "titan" ? "Titan" : goal = "fight" ? "Fight" : "—"
     dDone := raidDoneKey = RaidHourKey() ? "done" : "not yet"
     return dRaid "|" dSpeed "|" dGoal "|" dDone "|" uiStatus "|" running "|" curPage "|" hoverId "|" uiLog.Length
         . "|" (WinExist(GAME) != 0) "|" curLoadout "|" (running && A_TickCount - lastFight < FIGHT_STICKY)
@@ -615,6 +615,7 @@ UiRender(force := false) {
         case "m_raid":  PageRaid()
         case "m_speed": PageSpeed()
         case "m_inf":   PageInfinity()
+        case "m_titan": PageTitan()
         case "stats":  PageStats()
         case "look":   PageLook()
         default:       PageHome()
@@ -867,7 +868,7 @@ PageHome() {
     Tx("Loadout " (curLoadout ? curLoadout : "?"), "ui", 13, 1, C.dim, CX + aw - 130, ay + 116, 110, 26, 2)
     Caption("Modes", CX + 20, ay + 158)
     mx := CX + 20
-    for m in [["raid", "Raid"], ["speed", "Speed Raid"], ["infinity", "Infinity"]] {
+    for m in [["raid", "Raid"], ["speed", "Speed Raid"], ["infinity", "Infinity"], ["titan", "Titan"]] {
         on := cfg[m[1]] = "1"
         w := TxW(m[2], "ui", 13, 1) + 32
         if on {
@@ -997,10 +998,11 @@ ModeCard(x, y, w, h, title, desc, key, page, btnText := "Settings", soon := fals
 }
 
 PageModes() {
-    cw2 := (CWD - 12) // 2, ch := (CHT - 12) // 2
+    cw2 := (CWD - 12) // 2, ch := (CHT - 24) // 3
     cards := [["Raid", "Enters the raid at the start of every hour. The game's Auto button fights; choose the raid and the start options.", "raid", "m_raid"],
               ["Speed Raid", "Every 30 min with the lowest unused character. Needs loadout 3 if loadouts are on.", "speed", "m_speed"],
               ["Infinity", "Farms waves while the raid is closed. The character stands still and uses the big AOE skills.", "infinity", "m_inf"],
+              ["Titan", "Giant Dimension instead of Infinity. Used first when both are on.", "titan", "m_titan"],
               ["Loadouts", "Switches the Bag loadout: raid 1, Infinity 2, Speed Raid 3. Set your loadouts first.", "loadouts", ""]]
     for i, mc in cards {   ; not "c": it would shadow the global theme object C
         col := Mod(i - 1, 2), row := (i - 1) // 2
@@ -1037,6 +1039,26 @@ PageSpeed() {
     Panel(CX, CY + 302, CWD, CHT - 302, "Settings")
     ToggleRow(CX + 20, CY + 344, (CWD - 40 - 24) // 2, "Speed Raid enabled", "Turn it off to skip Speed Raid completely", "speed")
     ToggleRow(CX + 20 + (CWD - 40 - 24) // 2 + 24, CY + 344, (CWD - 40 - 24) // 2, "Switch loadout", "All modes: raid 1, Infinity 2, Speed Raid 3", "loadouts")
+}
+
+PickTitanDiff(d) {
+    cfg["titanDiff"] := d
+    IniWrite d, INI, "raid", "titanDiff"
+    Log("setting titanDiff = " d " (applies at the next run)")
+}
+
+PageTitan() {
+    BackBar("Titan", "Giant Dimension, played by the bot on loadout 2")
+    py := CY + 46
+    Panel(CX, py, CWD, 92, "Difficulty")
+    cw3 := (CWD - 40 - 2 * 12) // 3
+    for i, d in ["Easy", "Hard", "Nightmare"]
+        Chip(CX + 20 + (i - 1) * (cw3 + 12), py + 44, cw3, 32, d, cfg["titanDiff"] = d, "tdiff_" d, PickTitanDiff.Bind(d))
+    py2 := py + 104
+    Panel(CX, py2, CWD, 106, "Settings")
+    colw := (CWD - 40 - 24) // 2
+    ToggleRow(CX + 20, py2 + 40, colw, "Titan enabled", "Replaces Infinity between raids", "titan")
+    ToggleRow(CX + 20 + colw + 24, py2 + 40, colw, "Hardcore", "3 lives, +1 reward", "titanHard")
 }
 
 PageInfinity() {
