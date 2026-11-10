@@ -22,6 +22,14 @@ check anything that stops matching.
 
 Game behaviour worth knowing:
 
+- **Raid picker** (10 Nov, ported from upstream 0.3.5): `raidName` in `raid.ini` picks one of the 10 raids in `RAIDS`. Every raid
+  except Divine is found in the Create list by name (OCR, `PickRaidByName`). As of 10 Nov only Divine has been tested on this server.
+  If a raid is missing from the list 3 times, the bot skips that hour's raid.
+- **Group Finder entry** (`raidEntry=gf`, user's choice on 10 Nov because grouping with other players deals more damage): `EnterRaidGF` queues
+  through the Group Finder tab, as upstream 0.3.5 does. If the bot is not teleported `GF_FALLBACK` (120 s) after the raid opens, or the
+  name is missing from the list 3 times, it cancels the queue and creates the raid itself for that hour, **open to others** (Friends Only
+  off, short PARTY wait `startDelay`). `GF_TAB_DX` and `GF_BANNER` were measured upstream at 100% and are not yet checked at 150%.
+  Fight handling is unchanged (game's Auto, kept on).
 - **The raid can only be created in about the first 10 minutes after it opens** (from a code comment).
 - **The raid world has no menu route back to the lobby** in the bot's logic, so it restarts Roblox to get out.
   PLAY in the raid world opens the raid list, not the modes menu.
@@ -72,6 +80,15 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
 - **AUTO letters:** OFF at 714,840, ON at 706,842. OFF diamond can be dark as well as red. Never treat ON as off, or a click turns Auto off.
 - **Focus:** if another window is in front, Windows blocks focus stealing and the bot would read and click that window (missed the
   11:45 raid on 7 Nov). Roblox is always-on-top while running, cleared in `Stop`; while it is not active the bot waits.
+- **Not Responding** (10 Nov): Windows covers a hung Roblox with a ghost window owned by dwm.exe, so the focus check above
+  would wait forever. `Tick` checks `IsHungAppWindow` first and restarts Roblox after `HUNG_MAX` (60 s), or `HUNG_RAID` (20 s) in a
+  raid fight. The raid is lost anyway, and the user's rule is to leave at once and start a new one.
+  `raidDoneKey` is set when a raid fight *starts*, so `RestartRoblox` clears it for a raid cut off within `RAID_WINDOW`
+  (10 min); the bot then creates a new raid (in Group Finder mode it falls back to Create, since the raid is already open).
+- **Preventive restart:** Roblox froze after 3.5 h mid-raid. In the lobby, 10-50 min into the raid hour, a Roblox running
+  `ROBLOX_MAX_AGE` (120 min) or longer is restarted (`RobloxAgeMin` reads the process start time through WMI).
+- **Group Finder queue:** pressing Easy closes the Join/Create window, and an open window dims the queue banner so OCR reads
+  nothing. While queued the bot must not press PLAY (`GfWaiting`). Reopening the window and clicking Easy again restarted the queue (10 Nov).
 - The `menuOk` guard: mode cards count only while PLAY is dimmed, otherwise the lobby false-matches them.
 
 ## Operating it
@@ -84,7 +101,8 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
 - Do not close or disturb Roblox while the user is playing manually.
 - Useful log grep: `restarting Roblox|ERROR|WARNING|ended by itself|pressing LEAVE|not recognised for|tokens|gems|raid clock`.
   "waiting (screen not recognised)" for a moment during loading is normal.
-- Some harmless oddities: "matched a blob of letter colour", and "scroll bar not found - scrolling with the mouse wheel" in Speed Raid.2erzx
+- Some harmless oddities: "matched a blob of letter colour", and "scroll bar not found - scrolling with the mouse wheel" in Speed Raid.
+
 ## Titan farming (`titan.ahk`, added 8 Nov)
 
 - "Titan" = **Giant Dimension** in the Dimension list. Settings in `raid.ini` `[raid]`: `titan=1`, `titanDiff=Easy|Hard|Nightmare`, `titanHard=1` (Hardcore: 3 lives, Esc-R-Enter costs one, **never click REVIVE: 50 gems**). Takes Infinity's slot in `PickTarget`. Uses loadout 2.

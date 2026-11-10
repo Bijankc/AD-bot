@@ -7,3 +7,4 @@ AD-Bot-report*.zip
 *.tmp
 
 device_check.txt
+logs/

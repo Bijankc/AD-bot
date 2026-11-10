@@ -82,10 +82,19 @@ RAIDS := Map(
     "sungomi",   ["", 0, "Sun Gomi Raid", "i)Gomi"],
     "tiger",     ["", 0, "Tiger Raid", "i)Tiger"],
     "dual",      ["", 0, "Dual Wielder Raid", "i)Wielder"],
-    "monke",     ["", 0, "Monke Raid", "i)Monke"])
+    "monke",     ["", 0, "Monke Raid", "i)Monke"],
+    "cursed",    ["", 0, "Cursed Sage Raid", "i)Cursed|Sage"])   ; 10.11: from upstream 0.3.5
 KNOCKBACK_RAIDS := " divine "            ; лише тут бос відкидає: пошук боса й поворот камери після смерті
 RAID_LIST     := [1040, 340, 220, 570]   ; стовпчик назв і кнопок Create in the list рейдів (x, y, w, h)
-RAID_CREATE_X := 1175                    ; x кнопки Create in the list
+RAID_CREATE_X := 1175                    ; x кнопки Create in the list (the queue button of the Group Finder list sits there too)
+; Group Finder (from upstream 0.3.5, measured there at 100% scale - check on the 150% screen)
+GF_TAB_DX     := 145                     ; Group Finder tab: centre is this far right of the Create tab centre
+GF_BTN        := "i)Eas|Ea.y|E.sy|Join|Queue|Find|Enter"   ; the button under a raid name in the Group Finder list (upstream: "Easy")
+; queue banner at the top: "Divine Guardian Raid / Easy / 114/12 Raid opens in 1:51", "Time: 00:06", CANCEL - seen at
+; x 825-1085, y 98-148 (10.11). Not below y 150: the raid world's own "Raid opens in N Minutes" banner starts there.
+; Readable only with the Join/Create window closed - the open window dims it and OCR reads nothing (10.11 15:43).
+GF_BANNER     := [760, 92, 400, 58]
+GF_FALLBACK   := 120                     ; s after the raid opens: still not teleported - cancel the queue and create the raid
 ; loadout: рейд - 1, Infinity - 2. Bag -> кнопка "Loadout N" угорі -> рядок списку. Поточний читаємо OCR з кнопки.
 BAG_BTN      := [1850, 700]              ; BAG праворуч (у лобі і в світі рейду)
 LOADOUT_BOX  := [880, 192, 230, 50]      ; кнопка "Loadout N ▼" у вікні Bag
@@ -95,6 +104,8 @@ BAG_CLOSE    := [1455, 219]
 ; Кожен персонаж - раз на тиждень (використані затемнені), режим - раз на 30 min.
 SPEED_LAST_MIN  := 52                    ; після цієї minилини не починаємо (рейд о :00; бос гине за 1-2 min)
 SPEED_EVERY     := 30 * 60               ; с між забігами
+RAID_MAX        := 15 * 60000            ; a raid still a fight after this long restarts Roblox (10.11: 5 h stuck behind a Disconnected dialog)
+DC_EVERY        := 20000                 ; read the screen centre for Roblox's Disconnected dialog this often, in any state
 SPEED_MAX       := 12 * 60000            ; a Speed Raid still on after this long is left (restart) - see Step
 SPEED_READY_BOX := [920, 872, 200, 32]   ; "Ready to enter" / "Ready in 00:01:13" над карткою в меню режимів
 MODES_CLOSE     := [1490, 200]           ; хрестик меню режимів
@@ -139,7 +150,10 @@ JOIN_COLOR := 0x1D3570          ; темно-синя кнопка Join (сір�
 JOIN_BOX   := [1370, 130, 1400, 1040]   ; вузька смуга всередині кнопок Join - перший збіг згори = перша кнопка
 RESTART_GAP    := 600000   ; перезапускати Roblox не частіше, ніж раз на 10 min
 SERVER_LINK    := "https://www.roblox.com/share?code=8d0a163e5397b8478b09f95c5cd09c88&type=Server"   ; приватний сервер автора (raid.ini serverLink - свій)
-RESTART_GAP_DC := 60000    ; а при обриві з'єднання (Error 279) - одразу, лише не частіше раз на minилину
+HUNG_MAX       := 60000    ; Roblox "Not Responding" this long - restart it (10.11)
+HUNG_RAID      := 20000    ; ... in a raid fight: leave at once and try a new raid while it can still be created (user, 10.11)
+ROBLOX_MAX_AGE := 120      ; min: Roblox running this long is restarted in the lobby between raids (10.11: it froze after 3.5 h mid-raid)
+RESTART_GAP_DC := 60000   ; а при обриві з'єднання (Error 279) - одразу, лише не частіше раз на minилину
 UNKNOWN_ESC := 90000    ; якщо screen not recognised for стільки ms - раз тиснемо Esc (закрити застряглі меню)
 LOG_MAX     := 20000000  ; якщо за день лог виріс понад 20 МБ - відкладаємо його в logs\ і починаємо новий
 LOGDIR      := A_ScriptDir "\logs\"   ; логи минулих днів: raid_РРРРММДД.log
@@ -179,6 +193,9 @@ lastSearch := 0          ; коли востаннє повертали каме
 farPress   := 0          ; Divine: коли спрацював скіл 1 чи 2 - за 2.5 с має з'явитись Combo, інакше бос далеко
 searchTurns := 0         ; скільки поворотів поспіль без влучань
 friendsDone := false     ; Friends Only на цьому екрані налаштувань уже перевірено
+gfQueuedAt := 0          ; Group Finder: tick of the click that put us in the queue (0 = not queued)
+gfOffHour := ""          ; Group Finder failed in this raid hour (RaidHourKey) - the raid is created instead
+gfMiss := 0, gfMissHour := ""   ; Group Finder: the raid name not found in its list (per raid hour)
 sameReads  := 0          ; скільки свіжих читань поспіль показали ту саму шкоду (доказ, що не влучаємо)
 ; лише для діагностики (на runTokens і статистику не впливають); скидаються на Start
 rewardRaw    := ""       ; останнє сире читання лічильника Rewards (до 3 цифр)
@@ -280,6 +297,7 @@ cfg := Map(
     "noComboReset", IniRead(INI, "raid", "noComboReset", "12000"),       ; Divine: no Combo this long -> reset, ms (0 = off)
     "farWalk",    IniRead(INI, "raid", "farWalk", "2500"),      ; Divine: після 1/2 немає Combo -> вперед стільки ms with Q x3 (0 = вимк.)
     "soloRaid",   IniRead(INI, "raid", "soloRaid", "1"),        ; рейд: вмикати Friends Only (соло, без інших гравців)
+    "raidEntry",  IniRead(INI, "raid", "raidEntry", "create"),  ; create = create the raid; gf = queue through Group Finder (Create as fallback)
     "loadouts",   IniRead(INI, "raid", "loadouts", "0"),     ; міняти loadout: рейд - 1, Infinity - 2, Speed Raid - 3
     "speed",      IniRead(INI, "raid", "speed", "1"),          ; Speed Raid раз на 30 min (пріоритет: рейд > speed > Infinity)
     "seekAfter",  IniRead(INI, "raid", "seekAfter", "5000"),    ; скільки ms без влучань, щоб почати пошук
@@ -296,6 +314,7 @@ cfg := Map(
     "infinity",   IniRead(INI, "raid", "infinity", "1"),
     "titan",      IniRead(INI, "raid", "titan", "0"),            ; Giant (Titan) Dimension instead of Infinity, see titan.ahk
     "titanDiff",  IniRead(INI, "raid", "titanDiff", "Nightmare"),  ; Easy, Hard or Nightmare
+    "titanDim",   IniRead(INI, "raid", "titanDim", "Giant"),     ; which dimension: Giant or Curse (routes in titan.ahk)
     "titanHard",  IniRead(INI, "raid", "titanHard", "1"),        ; Hardcore toggle of the dimension: 3 lives, +1 reward
     "sfx",        IniRead(INI, "raid", "sfx", "1"),                 ; короткі звуки кнопок
     "infStop",    IniRead(INI, "raid", "infStop", "57:30"),      ; о котрій (хв:с) виходити з Infinity
@@ -310,6 +329,7 @@ try DateDiff(speedDue, A_Now, "Seconds")                  ; a corrupt value woul
 catch
     speedDue := ""         ; коли Speed Raid знову доступний (yyyyMMddHHmmss)
 speedFails := 0                                           ; невдалих спроб Speed Raid поспіль
+SPEED_WEEK_MAX := 50                                      ; runs per week with special rewards
 raidDoneKey := IniRead(INI, "state", "raidDoneKey", "")
 ; Raid clock: second of the real hour at which THIS server's raid opens (0 = on the hour, as the bot was written for).
 ; 6.11: the raid timer runs per server - at 13:35 the menu said "Raid Opens in: 24:37" (opens at :00), but after a Roblox
@@ -343,6 +363,10 @@ RaidTitle() => RAIDS.Has(cfg["raidName"]) ? RAIDS[cfg["raidName"]][3] : "raid"
 
 ; чи відкидає бос обраного рейду (тоді потрібні пошук боса і поворот камери після смерті)
 Knockback() => lastEntered = "raid" && InStr(KNOCKBACK_RAIDS, " " cfg["raidName"] " ")
+; Group Finder is the way in this raid hour (it falls back to Create for the rest of the hour after a failure)
+GfActive() => cfg["raidEntry"] = "gf" && gfOffHour != RaidHourKey()
+; Friends Only when creating: only in Create mode. In Group Finder mode a created raid is the fallback - open to others
+SoloNow() => cfg["soloRaid"] = "1" && cfg["raidEntry"] != "gf"
 
 ; бій з одним босом: рейд або Speed Raid (підхід до боса на старті, Combo, респавн)
 BossFight() => lastEntered = "raid" || lastEntered = "speed"
@@ -758,7 +782,7 @@ Start() {
     sessStart := A_TickCount
     Log("start v" APP_VERSION ", order: " cfg["order"] (cfg["skillsOff"] != "" ? ", disabled: " cfg["skillsOff"] : "")
         . ", loadouts=" cfg["loadouts"] ", raid=" cfg["raid"] ", infinity=" cfg["infinity"] ", speed=" cfg["speed"]
-        . ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"] ", bossAuto=" cfg["bossAuto"])
+        . ", raidEntry=" cfg["raidEntry"] ", soloRaid=" cfg["soloRaid"] ", resetNo5=" cfg["resetNo5"] ", infStop=" cfg["infStop"] ", bossAuto=" cfg["bossAuto"])
     StartupChecks()
     PlaceId()                                             ; поки гра запущена - запам'ятовуємо, куди перезаходити
     OcrServer()                                         ; OCR-сервер вантажиться заздалегідь
@@ -926,6 +950,26 @@ Tick() {
             return
         }
         noGameSince := 0
+        ; Roblox "Not Responding" (10.11, user): Windows puts a grey ghost copy of the window (dwm.exe) on top, so Roblox is
+        ; "not the active window" below and the bot would wait there forever. Hung for HUNG_MAX - restart it. Short freezes
+        ; (loading, teleports) are shorter than that.
+        static hungSince := 0
+        if DllCall("IsHungAppWindow", "ptr", WinExist(GAME)) {
+            ; in a raid fight the raid is lost anyway - leave fast, a new one may still be created (RestartRoblox)
+            lim := lastEntered = "raid" && fightSince ? HUNG_RAID : HUNG_MAX
+            if !hungSince {
+                hungSince := A_TickCount
+                Log("Roblox is not responding - restarting it if this lasts " lim // 1000 " s")
+            }
+            SetStatus("Roblox is not responding (" (A_TickCount - hungSince) // 1000 " s)")
+            if A_TickCount - hungSince > lim && RestartRoblox("not responding for " lim // 1000 " s", , 60000)
+                hungSince := 0
+            return
+        }
+        if hungSince {
+            Log("  Roblox responds again after " (A_TickCount - hungSince) // 1000 " s")
+            hungSince := 0
+        }
         GameGeometry()                                    ; the monitor (and its scale) may have changed
         ; 7.11 11:40: the user typed in VS Code over the game - Windows does not let a background program take the foreground,
         ; the bot read VS Code as "screen not recognised", pressed Esc and clicked "window crosses" into it for 12 min,
@@ -1147,6 +1191,20 @@ Step() {
         return
     }
     goal := Target()
+    ; 10.11 01:53-07:13: Roblox showed "Disconnected (Error Code: 285)" for 5 h after a raid. The blurred screen behind it kept
+    ; the raid a "fight" (ENEMIES LEFT / Auto matches), so the bossAuto check (no sign for 10 s) never ran and the raid has no
+    ; time limit. The dialog is now read every DC_EVERY in any state; two hits in a row restart Roblox.
+    static lastDcCheck := 0, dcHits := 0
+    if A_TickCount - lastDcCheck >= DC_EVERY {
+        lastDcCheck := A_TickCount
+        dcHits := DisconnectDialog() ? dcHits + 1 : 0
+        if dcHits >= 2 {
+            dcHits := 0
+            Screenshot("disconnected")
+            RestartRoblox("connection lost (Disconnected dialog)", , RESTART_GAP_DC)
+            return
+        }
+    }
     b := ENEMIES_BOX
     ; бій: шукаємо лише червоні літери ENEMIES LEFT (фон ромба напівпрозорий, тому він "прозорий" у картинці)
     ; в еталоні лише насичено-червоні пікселі літер: краї літер змішуються з фоном і різняться від мапи до мапи
@@ -1270,6 +1328,12 @@ Step() {
                 RestartRoblox("Speed Raid takes too long", , 60000)
                 return
             }
+            if lastEntered = "raid" && fightSince && A_TickCount - fightSince > RAID_MAX {
+                Log("raid: still a fight after " (A_TickCount - fightSince) // 60000 " min - restarting Roblox")
+                Screenshot("raid_long")
+                RestartRoblox("raid takes too long", , 60000)
+                return
+            }
             if inFight && RespawnScreen()
                 SetStatus("death: waiting for respawn (Auto stays on)")
             else {
@@ -1280,7 +1344,7 @@ Step() {
             return
         }
         ; час іти в рейд (чи в Speed Raid), а ми в Infinity -> скидаємо персонажів (Esc, R, Enter), поки данж не закінчиться
-        if lastEntered = "infinity" && (goal = "raid" || goal = "speed" && !SpeedWait()) {
+        if lastEntered = "infinity" && (goal = "raid" || goal = "titan" || goal = "speed" && !SpeedWait()) {
             FightCount()
             if A_TickCount - lastReset >= RESET_EVERY {
                 SetStatus("leaving Infinity (" (goal = "speed" ? "Speed Raid" : "raid") "): Esc-R-Enter")
@@ -1498,7 +1562,7 @@ Step() {
     if FindImg("start.png", &x, &y) {                                     ; екран PARTY
         if !partySince
             partySince := A_TickCount
-        delay := lastEntered = "raid" && cfg["soloRaid"] != "1" ? Num("startDelay", 10) * 1000 : 0    ; solo mode (Friends Only on): nobody can join - start at once
+        delay := lastEntered = "raid" && !SoloNow() ? Num("startDelay", 10) * 1000 : 0    ; solo mode (Friends Only on): nobody can join - start at once
         left := delay - (A_TickCount - partySince)
         ; гравці вже набрались ("Team Damage Bonus: + 110%" - максимум) - далі чекати нема чого
         if left > 0 && PartyBonus() >= Num("startBonus", 110) {
@@ -1536,16 +1600,18 @@ Step() {
             return
         }
         ; соло-рейд: toggle Friends Only - ліворуч від кнопки Create, у тому ж рядку
-        if lastEntered = "raid" && cfg["soloRaid"] = "1" && !friendsDone {
+        ; Group Finder mode: this is the fallback raid - Friends Only must be OFF so other players can join (user, 10.11)
+        if lastEntered = "raid" && (SoloNow() || cfg["raidEntry"] = "gf") && !friendsDone {
             friendsDone := true
-            if FriendsOff(x, y) {
-                SetStatus("enabling Friends Only (solo)")
+            want := SoloNow() ? 1 : 0, word := want ? "enable" : "disable"
+            if (FriendsOff(x, y) ? 1 : 0) = want {                  ; off and solo wanted, or on and open wanted
+                SetStatus((want ? "enabling Friends Only (solo)" : "disabling Friends Only (open raid)"))
                 ClickXY(x - 90, y + 25)
                 ParkMouse()
                 Sleep 700
-                Log(FriendsOff(x, y) ? "  Friends Only: could not enable" : "  Friends Only enabled")
+                Log((FriendsOff(x, y) ? 1 : 0) = want ? "  Friends Only: could not " word : "  Friends Only " word "d")
             } else
-                Log("  Friends Only already enabled")
+                Log("  Friends Only already " word "d")
             return
         }
         ; raid world: the banner over the window says when this server's raid opens ("Raid opens in 35 Minutes 0 Second").
@@ -1585,8 +1651,23 @@ Step() {
     ; списки данжів і рейдів. Після оновлення Halloween Raid є і в списку данжів головного лобі,
     ; тож спершу обираємо те, що треба зараз, і лише потім вирішуємо, що робити з іншим
     rd := RAIDS.Has(cfg["raidName"]) ? RAIDS[cfg["raidName"]] : RAIDS["halloween"]   ; обраний рейд
+    ; Group Finder (upstream 0.3.5): the Join/Create window of the raid world - queue for the raid, the game teleports us in
+    if goal = "raid" && GfActive() && FindImg("create_tab.png", &gx, &gy) {
+        if EnterRaidGF(rd, gx, gy) {
+            SetEntered("raid")
+            friendsDone := false
+        }
+        return
+    }
     hasRaid := rd[1] != "" && FindImg(rd[1], &rx, &ry)
     hasHal := hasRaid || FindImg("halloween.png", &hx, &hy)               ; Halloween є в усіх списках рейдів
+    ; Group Finder wanted, but the raid list shows no Create tab to start from - it is created instead (logged once an hour)
+    static gfNoTabHour := ""
+    if hasHal && goal = "raid" && GfActive() && gfNoTabHour != RaidHourKey() {
+        gfNoTabHour := RaidHourKey()
+        Log("  Group Finder: the raid list shows no Create tab (create_tab.png) - creating the raid instead")
+        Screenshot("gf_notab")
+    }
     hasInf := FindImg("infinite.png", &ix, &iy)
     if goal = "titan" && lastEntered = "titan" && (hasInf || hasHal) {
         if PickTitan()
@@ -1603,6 +1684,12 @@ Step() {
         return
     }
     if hasHal && goal = "raid" && !hasRaid {                            ; рейд без еталона - шукаємо за назвою
+        ; Group Finder fallback: the window may open on the Group Finder tab (buttons say Easy) - the Create tab first
+        if cfg["raidEntry"] = "gf" && FindImg("create_tab.png", &tx, &ty) {
+            ClickImg("create_tab.png", tx, ty)
+            ParkMouse()
+            Sleep 2000
+        }
         if PickRaidByName(rd) {
             SetEntered("raid")
             friendsDone := false
@@ -1659,6 +1746,7 @@ Step() {
         }
         ; 4.11: the Halloween Dimension event card pushed Infinite Mode down and infinite.png stopped matching - pick it by name
         if goal = "titan" && PickTitan() {
+            SetEntered("titan")                                    ; 9.11: the list can open without the DIMENSION card click, and the run was treated as Infinity
             Sleep 1500
             return
         }
@@ -1694,7 +1782,7 @@ Step() {
         SetStatus("entering Dimension")
         if goal = "titan"
             SetEntered("titan")
-        ClickImg("dimension.png", x, y)
+        ClickXY(x + 130, y - 400)                                ; 9.11: the chat panel covers the DIMENSION letters and takes the click; the card art is clear
         ParkMouse()
         Sleep 1500
         return
@@ -1726,6 +1814,15 @@ Step() {
         return
     }
     if FindImg("play.png", &x, &y, 1500, 800, 1920, 1060) {               ; лише білі літери PLAY праворуч унизу (фон анімований)
+        if goal = "raid" && GfWaiting()                                   ; queued through Group Finder: PLAY would reopen the window
+            return
+        ; preventive restart (user, 10.11): Roblox froze after 3.5 h in the middle of a raid and the tokens were lost. In the
+        ; lobby, 10-50 min after the raid opened (the raid is over, the next is far), a Roblox running 2+ h is restarted
+        s := SecOfHour()
+        if goal != "raid" && s >= 600 && s < 3000 && (age := RobloxAgeMin()) >= ROBLOX_MAX_AGE {
+            RestartRoblox("preventive, it has been running " age // 60 " h " Mod(age, 60) " min")
+            return
+        }
         if infDrop {
             infDrop := false
             Log("lobby after Infinity was cut off")
@@ -1766,7 +1863,7 @@ Step() {
         dc := Disconnected()
         ; результати Infinity з "Teleporting in 0": телепорт гри завис (29.10 17:58 - 14 min і пропущений рейд).
         ; Раз тиснемо LEAVE, не допомогло - одразу перезапуск гри, не чекаючи 12 min
-        if !dc && InStr(OcrRegion([860, 840, 340, 70]), "Teleport") {
+        if !dc && InStr(OcrRegion([860, 805, 340, 105]), "Teleport") {     ; 10.11 12:14 Curse: the text sat at y 825-850, above the old box
             if watchStep = 1 {
                 Log("  teleport stuck (Teleporting in 0) - pressing LEAVE")
                 ClickXY(1215, 762)
@@ -1775,7 +1872,7 @@ Step() {
                 return
             }
             unknownSince := A_TickCount
-            if RestartRoblox("teleport stuck after Infinity", , 60000)
+            if RestartRoblox("teleport stuck (Teleporting in 0)", , 60000)
                 watchStep := 0
             return
         }
@@ -2129,7 +2226,123 @@ PickInfinity() {
 
 ; Рейд без еталона: шукаємо його назву в списку рейдів (OCR), гортаючи колесом від початку,
 ; і тиснемо Create під назвою. true - натиснули.
-PickRaidByName(rd, isRaid := true) {
+; Raid entry through Group Finder (upstream 0.3.5, 7.11): open its tab, find the raid by name, press the button under it -
+; the bot queues and the game teleports into the raid when it opens. While queued the window is not touched (upstream: a
+; second click leaves the queue). Not teleported GF_FALLBACK s after the raid opened, or the raid not in the list 3 times:
+; cancel the queue and create the raid for the rest of this hour (user, 10.11). true - just queued.
+EnterRaidGF(rd, x, y) {
+    global gfQueuedAt, gfMiss, gfMissHour
+    if gfQueuedAt && A_TickCount - gfQueuedAt > 900000      ; a queue from an earlier hour means nothing now
+        gfQueuedAt := 0
+    s := SecOfHour()
+    if s >= GF_FALLBACK && s < 1800 {                        ; the raid is open and we are still at this window
+        GfFallback((gfQueuedAt ? "no teleport " : "not queued ") s " s after the raid opened")
+        return false
+    }
+    ; queued, but the window is open again: it dims the queue banner (unreadable) and a click on Easy would restart the
+    ; queue (10.11 15:43) - close it and wait in the raid world (GfWaiting)
+    if gfQueuedAt {
+        SetStatus("Group Finder: queued - closing the window")
+        ClickXY(1227, 261)                                ; хрестик вікна
+        ParkMouse()
+        Sleep 800
+        return false
+    }
+    SetStatus("Group Finder tab")
+    size := PngSize(IMGDIR "create_tab.png")
+    ClickXY(x + size[1] // 2 + GF_TAB_DX, y + size[2] // 2)
+    ParkMouse()
+    Sleep 2000                                            ; the list loads
+    if PickRaidByName(rd, false, GF_BTN) {
+        gfQueuedAt := A_TickCount
+        Sleep 1500                                        ; the game closes the window after the click - the banner is bright
+        shown := GfBannerShown()
+        Log("  Group Finder: queued for " rd[3] (shown ? "" : " - but no queue banner seen, see the shot"))
+        if !shown
+            Screenshot("gf_banner")
+        return true
+    }
+    hour := RaidHourKey()
+    if gfMissHour != hour
+        gfMiss := 0, gfMissHour := hour
+    if ++gfMiss >= 3
+        GfFallback(rd[3] " not found in the Group Finder list 3 times")
+    return false
+}
+
+GfBannerShown() => RegExMatch(OcrRegion(GF_BANNER), "i)opens|cancel|Time")
+
+; Queued through Group Finder and back in the raid world (the game closes the window after Easy): wait here instead of
+; pressing PLAY - PLAY reopens the window, which dims the banner. true = wait. The banner gone for 90 s after the click
+; (cancelled, failed) - false, PLAY is pressed and the bot queues again. The raid open GF_FALLBACK s and no teleport -
+; cancel the queue and create the raid (false: PLAY opens the window for it).
+GfWaiting() {
+    global gfQueuedAt
+    static chkAt := 0, shown := true
+    if !gfQueuedAt || !GfActive()
+        return false
+    if A_TickCount - gfQueuedAt > 900000 {
+        gfQueuedAt := 0
+        return false
+    }
+    s := SecOfHour()
+    if s >= GF_FALLBACK && s < 1800 {
+        GfFallback("no teleport " s " s after the raid opened")
+        return false
+    }
+    if A_TickCount - chkAt > 1500 {
+        chkAt := A_TickCount
+        shown := GfBannerShown()
+    }
+    if shown || A_TickCount - gfQueuedAt < 90000 {
+        SetStatus("Group Finder: queued, waiting for the raid")
+        return true
+    }
+    Log("  Group Finder: the queue banner is gone - queueing again")
+    Screenshot("gf_gone")
+    gfQueuedAt := 0
+    return false
+}
+
+; Group Finder did not work this hour: cancel the queue - the raid is created (open to others) for the rest of the hour.
+; The window is closed first: it dims the banner and its CANCEL cannot be read.
+GfFallback(why) {
+    global gfQueuedAt, gfOffHour
+    Log("  Group Finder: " why " - creating the raid instead (open to others)")
+    Screenshot("gf_fallback")
+    if FindImg("create_tab.png", &tx, &ty) {
+        ClickXY(1227, 261)                                ; хрестик вікна
+        ParkMouse()
+        Sleep 800
+    }
+    if gfQueuedAt
+        GfCancel()
+    gfQueuedAt := 0
+    gfOffHour := RaidHourKey()
+}
+
+; CANCEL on the queue banner. The OCR gives no x, so the banner is read in overlapping slices; the click goes to the
+; middle of the slices that hold the word.
+GfCancel() {
+    b := GF_BANNER, w := 120, step := 60, sum := 0, n := 0
+    sx := b[1]
+    while sx + w <= b[1] + b[3] {
+        if RegExMatch(OcrRegion([sx, b[2], w, b[4]]), "i)canc|ancel")
+            sum += sx + w // 2, n++
+        sx += step
+    }
+    if !n {
+        Log("  Group Finder: CANCEL not found on the queue banner")
+        return false
+    }
+    ClickXY(sum // n, b[2] + b[4] // 2)
+    ParkMouse()
+    Sleep 1000
+    Log("  Group Finder: queue cancelled" (GfBannerShown() ? " - but the banner is still there" : ""))
+    return true
+}
+
+PickRaidByName(rd, isRaid := true, btn := "i)reate") {
     global raidDoneKey, pickFails, pickFailHour, pickMissAt
     b := RAID_LIST
     SetStatus("looking for " rd[3] " in the list")
@@ -2147,7 +2360,7 @@ PickRaidByName(rd, isRaid := true) {
             all .= ln[1] ":" ln[2] "|"                   ; with y: small steps may show the same rows, only shifted
             if !titleY && RegExMatch(ln[2], rd[4])
                 titleY := ln[1]
-            else if titleY && InStr(ln[2], "reate") && ln[1] > titleY && ln[1] - titleY < 130 {
+            else if titleY && RegExMatch(ln[2], btn) && ln[1] > titleY && ln[1] - titleY < 130 {
                 SetStatus("selecting " rd[3])
                 ClickXY(RAID_CREATE_X, b[2] + ln[1])
                 ParkMouse()
@@ -2324,6 +2537,28 @@ MenuLoadoutWrong(n) {
 
 ; секунд до тижневого скидання Speed Raid з рядка "Weekly Reset in: 1 Day 3 Hours 5 Minutes" (0 - не прочитали):
 ; після нього використані персонажі знову вільні
+; user, 8.11: Speed Raid pays special rewards for the first 50 runs of a week, after that "very little".
+; Runs of this week so far. The week ends at the reset time shown in the Speed Raid window; resetSec = 0 when it was not read.
+SpeedWeekRuns(resetSec) {
+    end := IniRead(INI, "state", "speedWeekEnd", "")
+    runs := IniRead(INI, "state", "speedWeekRuns", "0")
+    runs := IsInteger(runs) ? Integer(runs) : 0
+    try {
+        if end != "" && DateDiff(A_Now, end, "Seconds") >= 0
+            runs := 0, end := ""
+    } catch
+        end := ""
+    if resetSec {
+        e := DateAdd(A_Now, resetSec, "Seconds")
+        if end != "" && DateDiff(e, end, "Seconds") > 86400     ; the shown reset jumped forward: the bot was off during the reset
+            runs := 0
+        end := e
+    }
+    IniWrite end, INI, "state", "speedWeekEnd"
+    IniWrite runs, INI, "state", "speedWeekRuns"
+    return runs
+}
+
 SpeedResetSec() {
     txt := OcrRegion(SPEED_RESET_BOX)
     if !InStr(txt, "eset")
@@ -2384,6 +2619,15 @@ SpeedEnter(x, y) {
         return SpeedFail("Speed Raid window did not open")
     resetSec := SpeedResetSec()                          ; the weekly reset is shown under the title
     Log("  Speed Raid: weekly reset in " (resetSec ? resetSec // 3600 " h " Mod(resetSec // 60, 60) " min" : "? (not read)"))
+    weekRuns := SpeedWeekRuns(resetSec)
+    if weekRuns >= SPEED_WEEK_MAX {
+        wait := resetSec ? resetSec + 180 : 6 * 3600
+        Log("  Speed Raid: " weekRuns " runs this week, the special rewards are used up - next try in " Ceil(wait / 3600) " h")
+        ClickXY(SPEED_CLOSE[1], SPEED_CLOSE[2])
+        ParkMouse()
+        SpeedLater(wait)
+        return
+    }
     ClickXY(SPEED_START[1], SPEED_START[2])
     ParkMouse()
     Sleep 2000
@@ -2431,7 +2675,8 @@ SpeedEnter(x, y) {
     AutoReset()
     portraitSig := "", walkAt := 0, patrolIdx := 0
     Stat("speedRuns")
-    Log("Speed Raid: start (character x=" cx " y=" cy ")")
+    IniWrite weekRuns + 1, INI, "state", "speedWeekRuns"
+    Log("Speed Raid: start (character x=" cx " y=" cy ", run " weekRuns + 1 " of " SPEED_WEEK_MAX " this week)")
     ; телепорт: кілька секунд ще видно лобі з PLAY - чекаємо, поки воно зникне, інакше бот
     ; знову тисне Bag/PLAY посеред телепорту (28.10: loadout 2 "не вдалося" і 10 min без зміни)
     t0 := A_TickCount
@@ -2663,12 +2908,33 @@ PlaceId() {
 
 ; Закрити Roblox і зайти в гру знову (протокол roblox://). Повертає true, якщо вікно гри з'явилось.
 ; mode: "auto" - спершу браузер, потім roblox://; "browser" / "proto" - лише цей спосіб (тест, без паузи 10 min)
+; minutes since RobloxPlayerBeta.exe started (also one started before the bot); 0 = not running or not read
+RobloxAgeMin() {
+    static pid := 0, started := ""
+    if !(p := ProcessExist("RobloxPlayerBeta.exe"))
+        return 0
+    if p != pid {
+        pid := p, started := ""
+        try for proc in ComObjGet("winmgmts:").ExecQuery("SELECT CreationDate FROM Win32_Process WHERE ProcessId=" p)
+            started := SubStr(proc.CreationDate, 1, 14)
+    }
+    try return started != "" ? DateDiff(A_Now, started, "Minutes") : 0
+    return 0
+}
+
 RestartRoblox(why, mode := "auto", gap := RESTART_GAP) {
-    global lastRestart, fightSince, portraitSig, walkAt, noGameSince, lastFight
+    global lastRestart, fightSince, portraitSig, walkAt, noGameSince, lastFight, raidDoneKey
     if mode = "auto" && A_TickCount - lastRestart < gap && lastRestart
         return false
     lastRestart := A_TickCount
     SetStatus("restarting Roblox: " why)
+    ; a raid cut off in the fight (freeze, lost connection) gave no tokens: the hour is not "done" - while the raid can
+    ; still be created (RAID_WINDOW), the bot goes for a new one after the restart (user, 10.11)
+    if lastEntered = "raid" && fightSince && raidDoneKey = RaidHourKey() && RaidMin() < RAID_WINDOW {
+        raidDoneKey := ""
+        IniWrite raidDoneKey, INI, "state", "raidDoneKey"
+        Log("  the raid was cut off at minute " RaidMin() " - trying a new one after the restart")
+    }
     Stat("restarts")
     Screenshot("restart")
     ReleaseKeys()
@@ -3275,4 +3541,14 @@ SkillReady(key) {
     if b < 40 || gg > 110
         return false
     return Max(r, gg, b) - Min(r, gg, b) > READY_SAT
+}
+
+; Roblox's own "Disconnected / Leave / Reconnect" dialog, strict words only (no bare "connection": this runs in every state)
+DisconnectDialog() {
+    txt := OcrRegion(DISCONNECT_BOX)
+    if RegExMatch(txt, "i)disconnected|reconnect|error code") {
+        Log("  Disconnected dialog: " StrReplace(Trim(txt), "`n", " | "))
+        return true
+    }
+    return false
 }

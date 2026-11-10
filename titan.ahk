@@ -6,26 +6,50 @@
 titanHudReset := true                             ; the 25 s without the HUD count from the start of a run
 titanBossHit := 0                                 ; last time the boss was seen below full HP
 titanArmed := 0                                   ; A_TickCount of Start / RETRY: the next fight is a fresh Titan run
+titanLeg := 0                                     ; route leg in progress; assists are saved for the recorded presses late in Curse
 
 ; The walking of the user's Guts4.txt, cut into legs: [key, ms, dashes at these ms of the leg]. The game lags and enemies spawn late
 ; (8.11: the counter read 0, then 13 a few seconds later, and the bot had already left), so every leg ends with TitanClear.
 TITAN_LEGS := [["w", 5720, []], ["d", 4370, []], ["w", 3660, []], ["a", 6300, []], ["a", 6310, [4700, 5120, 5660]],
     ["a", 7000, [1760, 5790, 6220, 6860]], ["a", 7000, [2110, 3620]], ["a", 7560, []], ["a", 2150, []], ["a", 3950, []],
     ["a", 5560, []], ["a", 1760, []], ["d", 280, []], ["a", 270, []], ["a", 1050, []], ["a", 3200, [1830, 2080]], ["d", 550, []]]
+; Curse Dimension: the user's own run of 8.11 (S rank, 1:51). [keys, ms, dashes, stop]: stop = the user paused there to fight.
+; "w d" = both keys held. The short legs near the end put the character on the TELEPORT pad.
+; Optional 5th value: skill 3 (movement boost) first, then walk this many ms after pressing it. Without it leg 16 stopped short of the mini boss (9.11).
+CURSE_LEGS := [["w", 3969, [], 1], ["w", 2610, [[2047, "1"]], 1], ["w", 1610, [], 0], ["a", 640, [], 1], ["w", 1125, [], 0], ["w d", 125, [], 0],
+    ["d", 922, [], 0], ["w", 1328, [[625, "1"]], 1], ["a", 6219, [], 1], ["s", 1031, [], 0], ["a", 3188, [], 1], ["a", 187, [], 0], ["w", 640, [], 1],
+    ["a", 2984, [], 0], ["s", 1156, [], 1], ["s", 2953, [], 1, 1828], ["a", 11094, [8781], 1], ["a", 1313, [], 1], ["a", 3375, [], 0],
+    ["a w", 750, [], 0], ["a", 375, [], 0], ["a w", 125, [], 0], ["a", 922, [], 1], ["a", 2750, [], 0], ["w", 954, [], 0], ["w", 10516, [[1234, "1"], [2125, "1"], [2375, "1"], [2594, "1"], [2844, "1"], [3062, "1"], [3328, "1"], [3953, "1"], [4203, "1"], [4437, "1"], [4672, "1"], [4891, "1"], [5172, "1"], [5484, "1"], [5734, "1"], [5984, "1"], [6250, "1"], [10062, "e"]], 1, 578],
+    ["s", 1219, [], 0], ["w", 406, [], 0], ["w", 2890, [[0, "r"]], 1], ["w", 1204, [], 0, 781], ["w", 203, [], 0], ["s", 312, [], 0], ["w", 375, [], 0],
+    ["d", 219, [], 0], ["a", 94, [], 1], ["d", 5219, [], 1]]
+TITAN_ROUTES := Map("Giant", TITAN_LEGS, "Curse", CURSE_LEGS)
 TITAN_STEADY := 12000                             ; ENEMIES LEFT unchanged this long = this part is finished
 TITAN_CLEAR_MAX := 45000
 ; EnemiesSig() of each count, from 620 recorded frames (the digits are drawn identically every time; 12 and 13 share a print)
 TITAN_COUNTS := Map("33,17,30,23,14", "0", "15,20,26,24,12", "1", "28,18,29,23,14", "2", "28,17,29,23,13", "3", "26,17,31,24,14", "4",
     "29,18,29,23,13", "5", "33,18,31,24,14", "6", "25,18,30,24,11", "7", "36,17,30,23,14", "8", "33,18,30,24,13", "9",
-    "48,12,35,24,13", "10", "30,15,30,23,12", "11", "44,13,34,24,13", "12-13")
+    "48,12,35,24,13", "10", "30,15,30,23,12", "11", "44,13,34,24,13", "12-13", "46,13,35,24,13", "15", "49,12,35,24,13", "16", "41,12,34,23,12", "17", "52,12,35,24,13", "18", "61,10,37,23,14", "20", "43,14,33,23,13", "21")
 TITAN_ZERO_WAIT := 7000                           ; 0 left for this long = really finished; 8.11 the next 13 came about 4 s after a 0
-TITAN_SKILLS := ["2", "1", "3", "4", "5", "e", "r", "z", "x"]   ; 2 first: the big AOE of loadout 2
+TITAN_BIG_SKILLS := ["e", "r", "z", "x"]           ; assists and fruit powers
+CURSE_GATE_LEG := 29                              ; last stop before the TELEPORT legs: the count must be 0 here (user's run: 0 at this point)
+CURSE_GATE_MAX := 20000
+CURSE_MINI_LEG := 16                              ; leg 16 (skill 3 boost through the tunnel) ends at the mini boss Soul Shaper
+CURSE_TP_LEG := 33                                ; 10.11: after this leg the TELEPORT label is beside the character; the timed legs
+                                                  ; 34-36 walked past the pad twice, so the bot steers onto it by the label
+CURSE_TP_GAPS := [[15, 0], [15, 1], [38, 2], [59, 3], [41, 4], [116, 4], [43, 5], [116, 5], [67, 6], [11, 7], [90, 7], [42, 8],
+    [11, 9], [97, 9], [38, 10], [114, 10], [41, 11], [115, 11], [76, 12], [45, 13], [0, 14], [96, 14], [68, 15], [127, 15]]
+CURSE_BOOST_SLOT := [1035, 960]                   ; skill 3 diamond: pink-red when ready, grey with the seconds while it cools down
+CURSE_CHAR_X := 868                               ; screen x of the character (its name tag) with Shift Lock on
+CURSE_SPAM_LEG := 25                              ; user, 9.11: only after the corner past the mini boss (legs 18-24 go left, 25 turns to W)
+CURSE_SPAM := ["5", "4", "2", "1", "e", "r", "z", "x"]
+TITAN_BIG_AFTER := 5000                           ; user, 9.11: only when a stop keeps missing enemies = count above 0, unchanged this long
+TITAN_ROUTE_SKILLS := ["2", "1"]                  ; user, 8.11: every move has a big AOE, two are enough at each stop (his run used 1 and 2)
 TITAN_MAX := 640000                               ; the game's timer is 10:00
 
 ; Detail window of a dimension (Create visible): must be Giant Dimension on Nightmare. One step per tick.
 TitanCreate(x, y) {
     global lastCreate
-    if !InStr(OcrRegion([1070, 350, 190, 34]), "Giant") {
+    if !InStr(OcrRegion([1070, 350, 190, 34]), cfg["titanDim"]) {
         SetStatus("Titan: wrong dimension open, going back to the list")
         ClickXY(1164, 776)
         ParkMouse()
@@ -64,7 +88,7 @@ PickTitan() {
     static retryAt := 0
     if A_TickCount < retryAt
         return false
-    if PickRaidByName(["", 0, "Giant Dimension", "i)Giant"], false)
+    if PickRaidByName(["", 0, cfg["titanDim"] " Dimension", "i)" cfg["titanDim"]], false)
         return true
     retryAt := A_TickCount + 30000
     return false
@@ -80,6 +104,9 @@ TitanBossBar() {
     }
     return n >= 2
 }
+
+; 10.11 09:00: a living Soul Shaper (mini boss) has the same purple bar; the final boss is only the one named King of Curses
+CurseKingUp() => TitanBossBar() && InStr(OcrRegion([780, 156, 260, 36]), "King")
 
 ; the respawn point at the two pillars before the stairs (camera fixed after a respawn; sampled on 5 frames, 5 others differ)
 TitanPillars() {
@@ -202,6 +229,18 @@ TitanOver() {
     return ""
 }
 
+; 1 and 2 are enough for Giant. In Curse, a stop that keeps missing enemies also gets the assists and fruit powers, which reach further (user, 9.11).
+; stuck = TitanClear saw the same count for TITAN_BIG_AFTER. A count of 0 or an unreadable one never fires them.
+TitanKeys(stuck := false) {
+    if cfg["titanDim"] = "Curse" && titanLeg >= CURSE_SPAM_LEG
+        return CURSE_SPAM
+    keys := TITAN_ROUTE_SKILLS.Clone()
+    n := EnemiesSig()
+    if cfg["titanDim"] = "Curse" && stuck && n != "" && TITAN_COUNTS.Get(n, "") != "0"
+        keys.Push(TITAN_BIG_SKILLS*)
+    return keys
+}
+
 TitanCount() => TITAN_COUNTS.Get(EnemiesSig(), "?")
 
 ; "Game ends in N, Revive to continue": REVIVE costs 50 gems and attack clicks land mid-screen, so no click goes out while it shows
@@ -234,20 +273,17 @@ TitanWait(ms, &over) {
     return true
 }
 
-; 8.11 (user): skills and basic attacks turn the character toward enemies, so "forward" changes and it walks into walls.
-; Until the boss is really being hit only skill 2 and the assists are used; the whole kit once it takes damage.
+; 8.11 (user): basic attacks turn the character toward enemies, so "forward" changes and it walks into walls. Bosses die to the same
+; two AOE skills as everything else, so there are no clicks at all: nothing can land on the Revive button either.
 TitanAttack(&over) {
     TitanMouse()
-    full := A_TickCount - titanBossHit < 10000
-    for k in full ? TITAN_SKILLS : ["2", "e", "r", "z", "x"] {
+    for k in TitanKeys() {
         if !running
             return false
         Send "{" k " down}"
         Sleep 60
         Send "{" k " up}"
         Sleep 40
-        if full && !TitanRevive()
-            Click
         Sleep 40
     }
     over := TitanOver()
@@ -279,7 +315,7 @@ TitanClear(&over) {
                 return true
         } else if n != ""
             zeroAt := 0
-        for k in ["2", "e", "r", "z", "x"] {          ; no basic attack: it turns the character, and Revive sits mid-screen
+        for k in TitanKeys(A_TickCount - sameAt >= TITAN_BIG_AFTER && (titanLeg < 13 || titanLeg >= 29)) {  ; no basic attack: it turns the character, and Revive sits mid-screen
             Send "{" k " down}"
             Sleep 60
             Send "{" k " up}"
@@ -308,31 +344,226 @@ TitanBossHurt() {
     return false
 }
 
+; user, 9.11: after the mini boss enemies stand on the sides too, so everything is used while walking. Not skill 3: its boost must be ready
+; for legs 26 and 30, or they fall short. Legs under 900 ms (the steps onto the TELEPORT pad) stay free of it.
+TitanWalkWait(t0, endAt, legMs) {
+    static n := 0
+    spam := cfg["titanDim"] = "Curse" && titanLeg >= CURSE_SPAM_LEG && legMs >= 900
+    while A_TickCount - t0 < endAt {
+        if !spam {
+            Sleep 10
+            continue
+        }
+        k := CURSE_SPAM[Mod(n++, CURSE_SPAM.Length) + 1]
+        Send "{" k " down}"
+        Sleep 30
+        Send "{" k " up}"
+        Sleep 30
+    }
+}
+
 TitanOpening(&over) {
-    for i, leg in TITAN_LEGS {
+    legs := TITAN_ROUTES[cfg["titanDim"]]
+    for i, leg in legs {
         if !running
             return false
-        SetStatus("Titan: route leg " i "/" TITAN_LEGS.Length)
-        t0 := A_TickCount
-        Send "{" leg[1] " down}"
-        for d in leg[3] {
-            while A_TickCount - t0 < d
-                Sleep 10
-            Send "{q down}"
-            Sleep 80
-            Send "{q up}"
-        }
-        while A_TickCount - t0 < leg[2]
-            Sleep 10
-        Send "{" leg[1] " up}"
-        if leg[2] < 1500                              ; small corrections: no need to stop
+        global titanLeg := i
+        SetStatus("Titan: route leg " i "/" legs.Length)
+        t0 := TitanLegWalk(leg)
+        if cfg["titanDim"] = "Curse" && i = CURSE_TP_LEG && CurseKingUp() && TitanToTeleport()
+            break                                     ; through the TELEPORT: the boss fight takes over
+        if leg.Length >= 4 ? !leg[4] : leg[2] < 1500  ; small corrections: no need to stop
             continue
+        ; 10.11: the 17 were gone before leg 29 and King of Curses' bar was up (count 1). The stop and the gate waited 93 s for
+        ; a 0 that never comes, the fight there moved the character and the TELEPORT legs walked past the pad (user saw it).
+        ; Boss bar up at the gate = every section is cleared: walk straight on as in the user's run.
+        if cfg["titanDim"] = "Curse" && i = CURSE_GATE_LEG && CurseKingUp() {
+            Log("  Titan: leg " i ": boss bar up, " TitanCount() " left - no stop, on to the TELEPORT")
+            continue
+        }
         SetStatus("Titan: clearing after leg " i)
         if !TitanClear(&over)
             return false
-        Log("  Titan: leg " i " done, " TitanCount() " left (" (A_TickCount - t0) // 1000 " s at this stop)")
+        prevCnt := stopCnt ?? "", stopCnt := TitanCount()
+        Log("  Titan: leg " i " done, " stopCnt " left (" (A_TickCount - t0) // 1000 " s at this stop)")
+        ; user, 9.11: the final boss waits for every section to be cleared, so the teleport is not taken with enemies left
+        ; 10.11: 2 of 4 runs drifted against the left canal wall before leg 16, never got through the tunnel, and the 5 left and
+        ; everything after them never came: the count stayed at 5 from leg 15 on. A falling count is fine (08:57: 5, 3, 2, then the
+        ; boss came; walking leg 16 again then overshot the tunnel). Retry only when leg 16 killed nothing: no bar, same count.
+        if cfg["titanDim"] = "Curse" && i = CURSE_MINI_LEG {
+            tries := 0
+            while running && tries < 2 && !TitanBossBar() && IsInteger(c := TitanCount()) && c >= 2 && c = prevCnt {
+                tries++
+                Log("  Titan: leg " i ": no mini boss (" c " left) - stepping right, leg " i " again (" tries ")")
+                Send "{d down}"
+                Sleep 700
+                Send "{d up}"
+                TitanLegWalk(leg)
+                if !TitanClear(&over)
+                    return false
+                Log("  Titan: leg " i " again: " TitanCount() " left" (TitanBossBar() ? ", boss bar up" : ""))
+            }
+        }
+        if cfg["titanDim"] = "Curse" && i = CURSE_GATE_LEG && TitanCount() != "0" && !CurseKingUp()
+            if !CurseSweep(&over)
+                return false
+        if cfg["titanDim"] = "Curse" && i = CURSE_GATE_LEG && TitanCount() != "0" {
+            tg := A_TickCount
+            while running && TitanCount() != "0" && !CurseKingUp() && A_TickCount - tg < CURSE_GATE_MAX
+                if !TitanClear(&over)
+                    return false
+            Log("  Titan: teleport gate: " TitanCount() " left after " (A_TickCount - tg) // 1000 " s more")
+        }
     }
     return true
+}
+
+; 10.11: in 3 of 7 runs where Soul Shaper died, 3-7 of the wave of 21 were still left at the gate and never came; from the
+; gate only a wall is in sight, and they were last fought along leg 26. Walk back that way in steps (S keeps the Shift Lock
+; heading; the spam runs while walking), clear after each step, stop at 0 or King's bar, then walk forward the same time.
+CurseSweep(&over) {
+    back := 0, c0 := TitanCount()
+    for ms in [2000, 2000, 2500, 2500] {
+        if !running || TitanCount() = "0" || CurseKingUp()
+            break
+        TitanLegWalk(["s", ms, [], 0])
+        back += ms
+        if !TitanClear(&over)
+            return false
+        Log("  Titan: sweep back " back " ms: " TitanCount() " left")
+    }
+    if back
+        TitanLegWalk(["w", back, [], 0])
+    Log("  Titan: sweep done (" c0 " -> " TitanCount() " left" (CurseKingUp() ? ", King of Curses up" : "") ")")
+    return true
+}
+
+; The white TELEPORT label floats over the pad (curse_teleport.png = its letters, cut at the distance the route ends at).
+; White flashes match the letters too, so a hit counts only when the gaps between the letters are not white.
+TitanTeleportX() {
+    x1 := 200
+    Loop 6 {
+        if !FindImg("curse_teleport.png", &x, &y, x1, 280, 1600, 345, "*60 *TransFF00FF")
+            return -1
+        dark := 0
+        for g in CURSE_TP_GAPS {
+            c := Integer(PixelGetColor(x + g[1], y + g[2]))
+            dark += Min(c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF) < 150
+        }
+        if dark >= 17
+            return x + 64
+        x1 := x + 8
+    }
+    return -1
+}
+
+; Strafe toward the label (Shift Lock: A/D move sideways), walk on when it is straight ahead, stand still while it is not seen
+; (a flash). Gone for 2.5 s after being seen = teleported. true = through; false = never seen, the timed legs go on.
+; 10.11 12:01: with the leg 30 boost working the character stands at the front of the pad; the label is twice the size of the
+; template and right overhead, and the timed legs 34-36 walked away from it. OCR reads the big label (3 of 3 clear frames), so
+; a big label = the pad is straight ahead: walk in.
+TitanToTeleport() {
+    t0 := A_TickCount, seen := 0, lostAt := 0, steps := 0
+    while running && A_TickCount - t0 < 15000 {
+        lx := TitanTeleportX()
+        if lx < 0 && RegExMatch(OcrRegion([300, 220, 1300, 180]), "i)TEL.?.?P|EPORT|LEPO")
+            lx := CURSE_CHAR_X                        ; close: straight ahead
+        if lx < 0 {
+            if !seen && A_TickCount - t0 > 6000
+                break
+            if seen && !lostAt
+                lostAt := A_TickCount
+            if lostAt && A_TickCount - lostAt > 2500 {
+                Log("  Titan: TELEPORT taken (" steps " steps, " (A_TickCount - t0) // 1000 " s)")
+                return true
+            }
+            Sleep 150
+            continue
+        }
+        seen++, lostAt := 0, steps++
+        dx := lx - CURSE_CHAR_X
+        k := dx > 60 ? "d" : dx < -60 ? "a" : "w"
+        Send "{" k " down}"
+        Sleep 250
+        Send "{" k " up}"
+    }
+    Log("  Titan: TELEPORT " (seen ? "label still seen after " steps " steps" : "label not found") " - timed legs go on")
+    return false
+}
+
+; One route leg: optional skill 3 boost first (5th value), keys held for leg[2] ms, presses at their ms. Returns the walk's start.
+TitanLegWalk(leg) {
+    if leg.Length >= 5 {
+        pressAt := TitanBoost()                       ; the walk starts leg[5] ms after the press, as in the recording
+        Sleep Max(0, leg[5] - (A_TickCount - (pressAt ? pressAt : A_TickCount)))
+    }
+    t0 := A_TickCount
+    keys := StrSplit(leg[1], " ")
+    for k in keys
+        Send "{" k " down}"
+    for d in leg[3] {                             ; a number = dash at that ms; [ms, key] = press that key (user's recording)
+        at := d is Array ? d[1] : d, pk := d is Array ? d[2] : "q"
+        TitanWalkWait(t0, at, leg[2])
+        Send "{" pk " down}"
+        Sleep 80
+        Send "{" pk " up}"
+    }
+    TitanWalkWait(t0, leg[2], leg[2])
+    for k in keys
+        Send "{" k " up}"
+    return t0
+}
+
+; Skill 3 slot: "ready", "cool" (grey: cooling down, or locked while another skill plays) or "" (a flash covers it).
+; Checked on 8 recordings: ready 36-64 red points, cooling 0-11 red and 42-77 grey of 77.
+SkillSlotState(cx, cy) {
+    red := 0, grey := 0
+    px := GrabPixels(cx - 50, cy - 30, 101, 61)       ; one grab: 77 PixelGetColor calls took 320 ms
+    x := 0
+    while x <= 100 {
+        y := 0
+        while y <= 60 {
+            c := NumGet(px, (y * 101 + x) * 4, "uint")
+            r := c >> 16 & 0xFF, g := c >> 8 & 0xFF, b := c & 0xFF
+            if r > 120 && r - g > 60 && r - b > 40
+                red++
+            else if r < 170 && Abs(r - g) < 30 && Abs(r - b) < 30
+                grey++
+            y += 10
+        }
+        x += 10
+    }
+    return red >= 25 ? "ready" : grey >= 40 ? "cool" : ""
+}
+
+; 10.11: the run recorded at 08:16 never fired the leg 16 boost (skill 3 stayed ready in every frame), stopped at the canal short
+; of Soul Shaper, and so did every run after the first one of each bot start; the leg 30 boost (to the TELEPORT) was lost in most
+; runs too. A key pressed while skill 1 or 2 still plays is dropped. So: wait until the slot is ready on two reads, press, and
+; count it only when the slot is grey 0.3 s and 0.55 s later (a real cooldown lasts about 14 s). Returns the press tick, 0 = failed.
+TitanBoost() {
+    t0 := A_TickCount
+    Loop 10 {
+        tw := A_TickCount, ok := 0
+        while running && ok < 2 && A_TickCount - tw < 16000 {
+            Sleep 150
+            ok := SkillSlotState(CURSE_BOOST_SLOT*) = "ready" ? ok + 1 : 0
+        }
+        if !running
+            return false
+        pressAt := A_TickCount
+        Send "{3 down}"
+        Sleep 120
+        Send "{3 up}"
+        Sleep 180
+        s1 := SkillSlotState(CURSE_BOOST_SLOT*)
+        Sleep 250
+        if s1 = "cool" && SkillSlotState(CURSE_BOOST_SLOT*) = "cool" {
+            Log("  Titan: leg " titanLeg ": boost fired (press " A_Index ", " A_TickCount - t0 " ms)")
+            return pressAt
+        }
+    }
+    Log("  Titan: leg " titanLeg ": boost (skill 3) did not fire after 10 presses")
+    return 0
 }
 
 ; walk at the boss until it is close; distance is re-read while walking. false if the run ended
@@ -374,6 +605,7 @@ TitanWalk(&over) {
 TitanRun(fresh) {
     global titanArmed, lastFight, fightSince, infDrop, titanBossHit
     titanBossHit := 0
+    global titanLeg := 0
     global titanHudReset := true
     titanArmed := 0, infDrop := false, over := ""
     t0 := A_TickCount

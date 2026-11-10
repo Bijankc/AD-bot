@@ -20,7 +20,7 @@ THEMES := Map(
     "ember",    {lite: 0, ov: "FFFFFF", bg: "0D0806", card: "1A1210", field: "2B1D18", text: "F7ECE3", dim: "A58B7C", on: "FFB86B", off: "3D2A23", idle: "6E5347", acc: "EE7A3C", acc2: "B8365A", hi: "FFC48A"},
     "ironrose", {lite: 0, ov: "FFFFFF", bg: "060A11", card: "0F171F", field: "19262F", text: "E3EEF0", dim: "7E9BA2", on: "A6D8D8", off: "21313A", idle: "4B6670", acc: "5E8F9B", acc2: "24445A", hi: "AFD8DD"},
     "author",   {lite: 0, ov: "FFFFFF", bg: "08080A", card: "131316", field: "202024", text: "ECECEF", dim: "9A9AA2", on: "CFCFD8", off: "2E2E34", idle: "5E5E66", acc: "7B7D8A", acc2: "3E3F4A", hi: "E4E2EC"})
-RAIDS_READY := " divine "                   ; raids tested to work; the others are shown as "Coming soon"
+RAIDS_READY := " divine halloween shiro onehero saiya sungomi tiger dual monke cursed "   ; raids that can be picked (found in the Create list by name)
 THEME_ORDER := ["cosmos", "sakura", "midnight", "aurora", "metallic", "ironrose", "ember", "author"]
 THEME_TITLES := Map("cosmos", "Cosmos", "author", "Graphite", "midnight", "Midnight Sakura", "metallic", "Metallic", "ironrose", "Iron Rose")          ; shown instead of the capitalised key
 
@@ -299,6 +299,16 @@ FlipKey(key) {
     IniWrite cfg[key], INI, "raid", key
     Log("setting " key " = " cfg[key] " (applies at once)")
 }
+
+PickEntry(key) {
+    if cfg["raidEntry"] = key
+        return
+    cfg["raidEntry"] := key
+    IniWrite key, INI, "raid", "raidEntry"
+    Log("setting raidEntry = " key " (applies at once)")
+}
+
+RaidShort(k) => k = "saiya" ? "Saiya UI" : k = "shiro" ? "Infinity Shiro" : k = "divine" ? "Divine" : k = "onehero" ? "One Hero" : StrReplace(RAIDS[k][3], " Raid")
 
 PickRaid(key) {
     if cfg["raidName"] = key || !InStr(RAIDS_READY, " " key " ")
@@ -1013,20 +1023,27 @@ PageModes() {
 PageRaid() {
     BackBar("Raid", "Every hour, from createFrom (59:30) until the raid starts")
     py := CY + 46
-    Panel(CX, py, CWD, 82, "Raid to create")
-    cw3 := (CWD - 40 - 2 * 12) // 3, soon := ""
+    ph := 114                                              ; two rows of five chips (10 raids)
+    Panel(CX, py, CWD, ph, "Raid to farm")
+    cols := 5, cw5 := (CWD - 40 - (cols - 1) * 8) // cols, i := 0
     for k, v in RAIDS {
         if InStr(RAIDS_READY, " " k " ")
-            Chip(CX + 20, py + 40, cw3, 29, StrReplace(v[3], " Raid"), cfg["raidName"] = k, "raid_" k, PickRaid.Bind(k))
-        else
-            soon .= (soon = "" ? "" : ", ") StrReplace(v[3], " Raid")
+            Chip(CX + 20 + Mod(i, cols) * (cw5 + 8), py + 40 + (i // cols) * 36, cw5, 29, RaidShort(k), cfg["raidName"] = k, "raid_" k, PickRaid.Bind(k))
+        i++
     }
-    TxP("Coming soon: " soon, "ui", 11, C.idle, CX + 20 + cw3 + 16, py + 38, CWD - 40 - cw3 - 16, 36)
-    py2 := py + 92
-    Panel(CX, py2, CWD, 150, "Raid settings")
+    pe := py + ph + 10                                     ; how the bot gets in
+    gf := cfg["raidEntry"] = "gf"
+    Panel(CX, pe, CWD, 76, "Enter the raid by")
+    cw4 := (CWD - 40 - 3 * 8) // 4
+    Chip(CX + 20, pe + 38, cw4, 29, "Create", !gf, "entry_create", PickEntry.Bind("create"))
+    Chip(CX + 20 + cw4 + 8, pe + 38, cw4, 29, "Group Finder", gf, "entry_gf", PickEntry.Bind("gf"))
+    TxP(gf ? "Queues with other players. Not in the raid 2 min after it opens: the bot creates it, open to others."
+           : "The bot creates the raid itself at createFrom.", "ui", 11, C.dim, CX + 20 + 2 * (cw4 + 8) + 8, pe + 34, 2 * cw4 - 8, 36)
+    py2 := pe + 86
+    Panel(CX, py2, CWD, 146, "Raid settings")
     colw := (CWD - 40 - 24) // 2
-    solo := cfg["soloRaid"] = "1"
-    ToggleRow(CX + 20, py2 + 38, colw, "Solo mode (Friends Only)", "Nobody can join, so Start is pressed at once", "soloRaid")
+    solo := cfg["soloRaid"] = "1" && !gf                   ; Group Finder: a created raid is the fallback - always open
+    ToggleRow(CX + 20, py2 + 38, colw, "Solo mode (Friends Only)", gf ? "Off with Group Finder: the fallback raid is open" : "Nobody can join, so Start is pressed at once", "soloRaid", gf)
     TxP("The game's Auto button does the fighting in the raid: the bot only keeps it on and waits for the end.", "ui", 11, C.dim, CX + 20, py2 + 92, colw, 40)
     rx := CX + 20 + colw + 24
     Stepper(rx, py2 + 38, colw, "PARTY wait before Start", "startDelay", 1, 0, 30, 1, "s", 10, "Needs Friends Only off", solo)
@@ -1047,9 +1064,20 @@ PickTitanDiff(d) {
     Log("setting titanDiff = " d " (applies at the next run)")
 }
 
+PickTitanDim(d) {
+    cfg["titanDim"] := d
+    IniWrite d, INI, "raid", "titanDim"
+    Log("setting titanDim = " d " (applies at the next run)")
+}
+
 PageTitan() {
-    BackBar("Titan", "Giant Dimension, played by the bot on loadout 2")
+    BackBar("Titan", "Dimensions played by the bot on loadout 2")
     py := CY + 46
+    Panel(CX, py, CWD, 92, "Dimension")
+    cw2 := (CWD - 40 - 12) // 2
+    for i, d in ["Giant", "Curse"]
+        Chip(CX + 20 + (i - 1) * (cw2 + 12), py + 44, cw2, 32, d, cfg["titanDim"] = d, "tdim_" d, PickTitanDim.Bind(d))
+    py += 104
     Panel(CX, py, CWD, 92, "Difficulty")
     cw3 := (CWD - 40 - 2 * 12) // 3
     for i, d in ["Easy", "Hard", "Nightmare"]
