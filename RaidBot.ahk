@@ -1765,7 +1765,10 @@ Step() {
     ; The modes menu dims everything under it, PLAY included: PLAY still bright = the lobby, so a "card" seen now is a false
     ; match (7.11 02:53: raid_mode.png matched the lobby's skill-bar text / a white orb, the bot "saw" the menu without
     ; SPEED RAID and put the Speed Raid off for 10 min; 01:45 it clicked such a "card" in the lobby)
-    menuOk := !FindImg("play.png", &lx, &ly, 1500, 800, 1920, 1060)
+    ; 10.11 17:45: the tick began on the Group Finder teleport screen (no fight yet), the raid arena loaded during the tick and
+    ; raid_mode.png matched its skill bar - the bot clicked "the RAID card" in the Divine raid and waited 60 s with Auto off.
+    ; So the menu also needs the fight HUD (AUTO button) to be absent right now, not only at the start of the tick.
+    menuOk := !FindImg("play.png", &lx, &ly, 1500, 800, 1920, 1060) && !FightHud()
     static clockAt := 0
     if menuOk && cfg["raid"] = "1" && A_TickCount - clockAt > (raidCand >= 0 ? 4000 : 120000) && FindImg("raid_mode.png", &x, &y, 0, 860, SCR_W, 1000) {
         clockAt := A_TickCount
@@ -2260,9 +2263,11 @@ EnterRaidGF(rd, x, y) {
         gfQueuedAt := A_TickCount
         Sleep 1500                                        ; the game closes the window after the click - the banner is bright
         shown := GfBannerShown()
-        Log("  Group Finder: queued for " rd[3] (shown ? "" : " - but no queue banner seen, see the shot"))
-        if !shown
-            Screenshot("gf_banner")
+        Log("  Group Finder: queued for " rd[3] (shown ? "" : " - but no queue banner seen, trying again in 20 s"))
+        if !shown {                                       ; 10.11 16:39 (5:48 before the raid): no queue - GfWaiting retries
+            Screenshot("gf_banner")                       ; after 90 s from the click, so start the clock 70 s back
+            gfQueuedAt -= 70000
+        }
         return true
     }
     hour := RaidHourKey()
@@ -2273,7 +2278,10 @@ EnterRaidGF(rd, x, y) {
     return false
 }
 
-GfBannerShown() => RegExMatch(OcrRegion(GF_BANNER), "i)opens|cancel|Time")
+; the banner while queued: "Raid opens in 1:51", "Time: 00:06", CANCEL. When the raid opens and a group forms it becomes
+; "Group found!", "8/8 Starting..." with no CANCEL or Time (10.11 16:45: read as "gone", the bot queued again during the
+; teleport). The raid name and "Easy" stay on it in both forms.
+GfBannerShown() => RegExMatch(OcrRegion(GF_BANNER), "i)opens|cancel|Time|found|Start|Group|Eas|\d+\s*/\s*\d+")
 
 ; Queued through Group Finder and back in the raid world (the game closes the window after Easy): wait here instead of
 ; pressing PLAY - PLAY reopens the window, which dims the banner. true = wait. The banner gone for 90 s after the click
@@ -2299,6 +2307,13 @@ GfWaiting() {
     }
     if shown || A_TickCount - gfQueuedAt < 90000 {
         SetStatus("Group Finder: queued, waiting for the raid")
+        return true
+    }
+    ; the raid is open: the banner goes when the group's teleport starts (10.11 17:45 - PLAY seen faded behind the
+    ; "Teleporting" screen, the bot pressed it). Queueing again is pointless now, the raid has left the list; GF_FALLBACK
+    ; above creates it if no teleport comes
+    if s < GF_FALLBACK {
+        SetStatus("Group Finder: raid open, waiting for the teleport")
         return true
     }
     Log("  Group Finder: the queue banner is gone - queueing again")

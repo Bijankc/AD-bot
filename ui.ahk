@@ -203,7 +203,7 @@ UiCompute() {
     dSpeed := cfg["speed"] != "1" ? "—" : sLeft <= 0 ? "ready"
         : sLeft >= 3600 ? Round(sLeft / 3600) " h" : Format("{:02}:{:02}", sLeft // 60, Mod(sLeft, 60))
     goal := cfg["fightOnly"] = "1" ? "fight" : Target()
-    dGoal := goal = "raid" ? "Raid" : goal = "speed" ? "Speed" : goal = "infinity" ? "Infinity" : goal = "titan" ? "Titan" : goal = "fight" ? "Fight" : "—"
+    dGoal := goal = "raid" ? "Raid" : goal = "speed" ? "Speed" : goal = "infinity" ? "Infinity" : goal = "titan" ? "Dimension" : goal = "fight" ? "Fight" : "—"
     dDone := raidDoneKey = RaidHourKey() ? "done" : "not yet"
     return dRaid "|" dSpeed "|" dGoal "|" dDone "|" uiStatus "|" running "|" curPage "|" hoverId "|" uiLog.Length
         . "|" (WinExist(GAME) != 0) "|" curLoadout "|" (running && A_TickCount - lastFight < FIGHT_STICKY)
@@ -878,7 +878,7 @@ PageHome() {
     Tx("Loadout " (curLoadout ? curLoadout : "?"), "ui", 13, 1, C.dim, CX + aw - 130, ay + 116, 110, 26, 2)
     Caption("Modes", CX + 20, ay + 158)
     mx := CX + 20
-    for m in [["raid", "Raid"], ["speed", "Speed Raid"], ["infinity", "Infinity"], ["titan", "Titan"]] {
+    for m in [["raid", "Raid"], ["speed", "Speed Raid"], ["infinity", "Infinity"], ["titan", "Dimension"]] {
         on := cfg[m[1]] = "1"
         w := TxW(m[2], "ui", 13, 1) + 32
         if on {
@@ -1012,7 +1012,7 @@ PageModes() {
     cards := [["Raid", "Enters the raid at the start of every hour. The game's Auto button fights; choose the raid and the start options.", "raid", "m_raid"],
               ["Speed Raid", "Every 30 min with the lowest unused character. Needs loadout 3 if loadouts are on.", "speed", "m_speed"],
               ["Infinity", "Farms waves while the raid is closed. The character stands still and uses the big AOE skills.", "infinity", "m_inf"],
-              ["Titan", "Giant Dimension instead of Infinity. Used first when both are on.", "titan", "m_titan"],
+              ["Dimension", "Titan or Curse Dimension instead of Infinity. Used first when both are on.", "titan", "m_titan"],
               ["Loadouts", "Switches the Bag loadout: raid 1, Infinity 2, Speed Raid 3. Set your loadouts first.", "loadouts", ""]]
     for i, mc in cards {   ; not "c": it would shadow the global theme object C
         col := Mod(i - 1, 2), row := (i - 1) // 2
@@ -1071,12 +1071,12 @@ PickTitanDim(d) {
 }
 
 PageTitan() {
-    BackBar("Titan", "Dimensions played by the bot on loadout 2")
+    BackBar("Dimension", "Dimensions played by the bot on loadout 2")
     py := CY + 46
-    Panel(CX, py, CWD, 92, "Dimension")
+    Panel(CX, py, CWD, 92, "Mode")
     cw2 := (CWD - 40 - 12) // 2
-    for i, d in ["Giant", "Curse"]
-        Chip(CX + 20 + (i - 1) * (cw2 + 12), py + 44, cw2, 32, d, cfg["titanDim"] = d, "tdim_" d, PickTitanDim.Bind(d))
+    for i, d in [["Giant", "Titan"], ["Curse", "Curse"]]           ; [value in raid.ini titanDim, label]
+        Chip(CX + 20 + (i - 1) * (cw2 + 12), py + 44, cw2, 32, d[2], cfg["titanDim"] = d[1], "tdim_" d[1], PickTitanDim.Bind(d[1]))
     py += 104
     Panel(CX, py, CWD, 92, "Difficulty")
     cw3 := (CWD - 40 - 2 * 12) // 3
@@ -1085,7 +1085,7 @@ PageTitan() {
     py2 := py + 104
     Panel(CX, py2, CWD, 106, "Settings")
     colw := (CWD - 40 - 24) // 2
-    ToggleRow(CX + 20, py2 + 40, colw, "Titan enabled", "Replaces Infinity between raids", "titan")
+    ToggleRow(CX + 20, py2 + 40, colw, "Dimension enabled", "Replaces Infinity between raids", "titan")
     ToggleRow(CX + 20 + colw + 24, py2 + 40, colw, "Hardcore", "3 lives, +1 reward", "titanHard")
 }
 

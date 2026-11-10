@@ -91,6 +91,9 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
   `ROBLOX_MAX_AGE` (120 min) or longer is restarted (`RobloxAgeMin` reads the process start time through WMI).
 - **Group Finder queue:** pressing Easy closes the Join/Create window, and an open window dims the queue banner so OCR reads
   nothing. While queued the bot must not press PLAY (`GfWaiting`). Reopening the window and clicking Easy again restarted the queue (10 Nov).
+  When the raid opens, the banner changes to "Group found! / 8/8 Starting..." with no CANCEL or Time, and the teleport follows
+  about 20 s later. `GfBannerShown` accepts both forms. A click 5:48 before opening gave no queue, while 4:02 before worked.
+  A Halloween group teleport worked on 10 Nov (16:45).
 - The `menuOk` guard: mode cards count only while PLAY is dimmed, otherwise the lobby false-matches them.
 
 ## Operating it
