@@ -193,6 +193,8 @@ lastSearch := 0          ; коли востаннє повертали каме
 farPress   := 0          ; Divine: коли спрацював скіл 1 чи 2 - за 2.5 с має з'явитись Combo, інакше бос далеко
 searchTurns := 0         ; скільки поворотів поспіль без влучань
 friendsDone := false     ; Friends Only на цьому екрані налаштувань уже перевірено
+raidEndSeen := false     ; this raid fight reached its end (end screen or rewards) - a restart then must not retry the raid
+raidRetryHour := ""      ; the raid hour in which a cut-off raid was already retried (once per hour)
 gfQueuedAt := 0          ; Group Finder: tick of the click that put us in the queue (0 = not queued)
 gfOffHour := ""          ; Group Finder failed in this raid hour (RaidHourKey) - the raid is created instead
 gfMiss := 0, gfMissHour := ""   ; Group Finder: the raid name not found in its list (per raid hour)
@@ -1181,7 +1183,7 @@ SetEntered(what) {
 Step() {
     global partySince, lastCreate, lastFight, lastReset, raidDoneKey, unknownSince, watchStep, raidWalkDue, patrolIdx, friendsDone
     global fightSince, infDrop, portraitSig, walkAt, infLootDone, lastDmg, dmgChanged, searchTurns, raidShotDone, sameReads, learnLeft, comboSeen, lastCombo, lastComboCheck, camYaw, afterRespawn, wasDead, lastRespawnAt, farPress, lastSearch, lastAuto, autoOffAt
-    global autoOffAt, charIdx, rewardRaw, rewardReads, rewardRepeat, rdChanges, rdResetNo5, rdResetCombo, lastNo5Reset, lastLoadoutWarn, no5Pending
+    global autoOffAt, charIdx, rewardRaw, rewardReads, rewardRepeat, rdChanges, rdResetNo5, rdResetCombo, lastNo5Reset, lastLoadoutWarn, no5Pending, raidEndSeen
     prevUnknown := unknownSince              ; скидається на кожному тіку, де екран розпізнано
     unknownSince := 0
     if !prevUnknown
@@ -1249,6 +1251,7 @@ Step() {
         if !fightSince {
             fightSince := A_TickCount
             AutoReset()                                       ; Auto is off again after a teleport / new run
+            raidEndSeen := false                              ; a new fight: its end not seen yet
         }
         infDrop := false
         if lastEntered = "raid" && raidDoneKey != RaidHourKey() {
@@ -1294,7 +1297,7 @@ Step() {
         }
         ; рейд скінчився (ENEMIES LEFT зник на 3+ s left) - знімаємо екран нагород у папку shots
         if !inFight && !raidShotDone && BossFight() && fightSince && A_TickCount - lastFight > 3000 {
-            raidShotDone := true
+            raidShotDone := true, raidEndSeen := true
             Screenshot(lastEntered = "speed" ? "speed_end" : "raid_rewards")
         }
         ; bossAuto: the game's Auto fights; no skills, combo, walks, turns, resets - only keep Auto on and wait for the end
@@ -1310,12 +1313,12 @@ Step() {
             if !infLootDone && A_TickCount - lastCard >= 1000 {       ; REWARDS panel: gems and tokens
                 lastCard := A_TickCount
                 if RewardCards(lastEntered) {
-                    infLootDone := true
+                    infLootDone := true, raidEndSeen := true
                     return
                 }
             }
             if !raidShotDone && autoBtnAt && A_TickCount - autoBtnAt > 3000 {    ; the Auto button is gone: the end screen is up
-                raidShotDone := true
+                raidShotDone := true, raidEndSeen := true
                 Screenshot(lastEntered = "speed" ? "speed_end" : "raid_end")
             }
             ; 6.11 22:12: a Speed Raid boss (Shadow Yomiichi, 584M HP) ran 20+ min - the character kept dying - and would have
@@ -2923,17 +2926,25 @@ RobloxAgeMin() {
 }
 
 RestartRoblox(why, mode := "auto", gap := RESTART_GAP) {
-    global lastRestart, fightSince, portraitSig, walkAt, noGameSince, lastFight, raidDoneKey
+    global lastRestart, fightSince, portraitSig, walkAt, noGameSince, lastFight, raidDoneKey, raidRetryHour
     if mode = "auto" && A_TickCount - lastRestart < gap && lastRestart
         return false
     lastRestart := A_TickCount
     SetStatus("restarting Roblox: " why)
     ; a raid cut off in the fight (freeze, lost connection) gave no tokens: the hour is not "done" - while the raid can
-    ; still be created (RAID_WINDOW), the bot goes for a new one after the restart (user, 10.11)
+    ; still be created (RAID_WINDOW), the bot goes for a new one after the restart (user, 10.11).
+    ; Never after the raid's end screen or rewards were seen: the game allows one raid an hour (user, 10.11), and a raid
+    ; can end before minute 10. At most one retry an hour, so a wrong guess costs one attempt.
     if lastEntered = "raid" && fightSince && raidDoneKey = RaidHourKey() && RaidMin() < RAID_WINDOW {
-        raidDoneKey := ""
-        IniWrite raidDoneKey, INI, "state", "raidDoneKey"
-        Log("  the raid was cut off at minute " RaidMin() " - trying a new one after the restart")
+        if raidEndSeen
+            Log("  the raid had already ended (end screen / rewards seen) - not trying another this hour")
+        else if raidRetryHour = RaidHourKey()
+            Log("  the raid was cut off again - one retry an hour, not trying another")
+        else {
+            raidDoneKey := "", raidRetryHour := RaidHourKey()
+            IniWrite raidDoneKey, INI, "state", "raidDoneKey"
+            Log("  the raid was cut off at minute " RaidMin() " before its end - trying a new one after the restart")
+        }
     }
     Stat("restarts")
     Screenshot("restart")

@@ -85,6 +85,8 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
   raid fight. The raid is lost anyway, and the user's rule is to leave at once and start a new one.
   `raidDoneKey` is set when a raid fight *starts*, so `RestartRoblox` clears it for a raid cut off within `RAID_WINDOW`
   (10 min); the bot then creates a new raid (in Group Finder mode it falls back to Create, since the raid is already open).
+  **The game allows one raid an hour, and a raid can finish before minute 10**: no retry once `raidEndSeen` (end screen or
+  rewards) is set, and at most one retry per raid hour (`raidRetryHour`).
 - **Preventive restart:** Roblox froze after 3.5 h mid-raid. In the lobby, 10-50 min into the raid hour, a Roblox running
   `ROBLOX_MAX_AGE` (120 min) or longer is restarted (`RobloxAgeMin` reads the process start time through WMI).
 - **Group Finder queue:** pressing Easy closes the Join/Create window, and an open window dims the queue banner so OCR reads
