@@ -7,6 +7,8 @@ titanHudReset := true                             ; the 25 s without the HUD cou
 titanBossHit := 0                                 ; last time the boss was seen below full HP
 titanArmed := 0                                   ; A_TickCount of Start / RETRY: the next fight is a fresh Titan run
 titanLeg := 0                                     ; route leg in progress; assists are saved for the recorded presses late in Curse
+; titanFails, titanBenchUntil, TITAN_FAIL_MAX ... are set in RaidBot.ahk before the #Include lines: ui.ahk calls Target() while
+; it loads, before this file's top runs (13.11: "global variable has not been assigned a value" at start)
 
 ; The walking of the user's Guts4.txt, cut into legs: [key, ms, dashes at these ms of the leg]. The game lags and enemies spawn late
 ; (8.11: the counter read 0, then 13 a few seconds later, and the bot had already left), so every leg ends with TitanClear.
@@ -217,6 +219,14 @@ TitanOver() {
         if InStr(txt, "RETRY") && InStr(txt, "LEAVE")
             return "results"
     }
+    ; 13.11 15:36: RETRY 22 s before "the raid is soon", the run failed for 10 min, the Group Finder queue for 15:45 was missed.
+    ; The raid comes first: once it is the goal, a Hardcore run is ended (TitanRun spends the lives, the results give LEAVE)
+    static goalAt := 0
+    if !titanEnding && cfg["titanHard"] = "1" && A_TickCount - goalAt > 5000 {
+        goalAt := A_TickCount
+        if Target() = "raid"
+            return "raid"
+    }
     ; 8.11 19:35: PLAY matched on a bright floor, a false "lobby" in the middle of a run. The HUD rules that out
     if !TitanHud() && FindImg("play.png", &x, &y, 1500, 800, 1920, 1060) {
         if A_TickCount - at > 3000
@@ -241,7 +251,39 @@ TitanKeys(stuck := false) {
     return keys
 }
 
-TitanCount() => TITAN_COUNTS.Get(EnemiesSig(), "?")
+; 12.11: after a game/Roblox update the count is drawn a little bolder ("11" = 38,16,31,24,13, was 30,15,30,23,12), every
+; signature became "?" and the bot spent Hardcore lives on resets. An unknown signature is now read by OCR (red -> black)
+; once and remembered for the session; the log line gives the pair for TITAN_COUNTS.
+TitanCount() {
+    static learned := Map(), failAt := Map()
+    sig := EnemiesSig()
+    if sig = ""
+        return "?"
+    if TITAN_COUNTS.Has(sig)
+        return TITAN_COUNTS[sig]
+    if learned.Has(sig)
+        return learned[sig]
+    if failAt.Has(sig) && A_TickCount - failAt[sig] < 3000
+        return "?"
+    b := ENEMIES_NUM, txt := ""
+    try FileDelete OCR2_OUT
+    if SaveRegion(OCR2_IN, b[1], b[2], b[3], b[4]) = 0 {
+        OcrCall(OCR2_IN, OCR2_OUT, "-Red")
+        try txt := Trim(FileRead(OCR2_OUT, "UTF-8"), " `t`r`n")
+        try FileDelete OCR2_OUT
+    }
+    txt := StrReplace(StrReplace(txt, "O", "0"), "o", "0")
+    if RegExMatch(txt, "^\d{1,2}$") && Integer(txt) <= 40 {
+        n := String(Integer(txt))
+        if EnemiesSig() = sig {                                 ; the count did not change while it was read
+            learned[sig] := n
+            Log("  Titan: count " n " read by OCR - signature " sig)
+        }
+        return n
+    }
+    failAt[sig] := A_TickCount
+    return "?"
+}
 
 ; "Game ends in N, Revive to continue": REVIVE costs 50 gems and attack clicks land mid-screen, so no click goes out while it shows
 TitanRevive() {
@@ -386,6 +428,38 @@ TitanOpening(&over) {
             return false
         prevCnt := stopCnt ?? "", stopCnt := TitanCount()
         Log("  Titan: leg " i " done, " stopCnt " left (" (A_TickCount - t0) // 1000 " s at this stop)")
+        for d in TITAN_DIAG_LEGS
+            if titanDiag && d = i
+                Screenshot("titan_leg" i)
+        ; 13.11: some runs never get the group of 8 on the bridge down - the count stays 8 at every stop and the run times out
+        ; (F, no rewards, 10 min lost). In every cleared run the next wave (13) is up by leg 3 or 4. 8 or unreadable at legs 1-4
+        ; with 8 read at least twice = a dead run: end it at once (Hardcore lives) and RETRY
+        if cfg["titanDim"] = "Giant" && cfg["titanHard"] = "1" && i <= 4 {
+            global titanDead
+            stuck8 := i = 1 ? 0 : stuck8 ?? 0
+            ; 13.11 15:37: in a dead run leg 2 (D) ended against the wall short of the stairs up to the bridge (the cleared runs
+            ; are on the stairs by then). Leg 1's fight pushes the character a little, so: a step on and D again, once
+            if i = 2 && stopCnt = "8" {
+                Log("  Titan: leg 2: still 8 - a step forward and right, toward the stairs")
+                Screenshot("titan_fix")
+                TitanLegWalk(["w", 1200, []])
+                TitanLegWalk(["d", 2500, []])
+                if !TitanClear(&over)
+                    return false
+                stopCnt := TitanCount()
+                Log("  Titan: leg 2 again: " stopCnt " left")
+            }
+            if stopCnt = "8"
+                stuck8++
+            else if stopCnt != "?"
+                stuck8 := -99                         ; something moved: a normal run
+            if i = 4 && stuck8 >= 2 {
+                titanDead := true
+                Log("WARNING: Titan: still 8 left after leg 4 (the bridge group never came) - ending this run")
+                Screenshot("titan_dead")
+                return true
+            }
+        }
         ; user, 9.11: the final boss waits for every section to be cleared, so the teleport is not taken with enemies left
         ; 10.11: 2 of 4 runs drifted against the left canal wall before leg 16, never got through the tunnel, and the 5 left and
         ; everything after them never came: the count stayed at 5 from leg 15 on. A falling count is fine (08:57: 5, 3, 2, then the
@@ -610,6 +684,11 @@ TitanRun(fresh) {
     titanArmed := 0, infDrop := false, over := ""
     t0 := A_TickCount
     MouseMove 960, 500, 0
+    global titanDiag := fresh                  ; 13.11: every run while the "bridge group never comes" failure is studied
+    global titanDead := false
+    global titanRunsHere := titanRunsHere + 1
+    if titanDiag
+        Screenshot("titan_start")
     TitanLock(true)
     Log("Titan: run begins" (fresh ? "" : " (already in progress - no route)"))
     ReleaseKeys()
@@ -619,7 +698,10 @@ TitanRun(fresh) {
             Sleep 800
             if !TitanOpening(&over) && over = ""
                 return
-            Log("  Titan: route done at " (A_TickCount - t0) // 1000 " s" (TitanBossHurt() ? ", boss in reach" : ""))
+            if titanDead && over = ""
+                TitanEndRun(t0, "dead run", &over)
+            else
+                Log("  Titan: route done at " (A_TickCount - t0) // 1000 " s" (TitanBossHurt() ? ", boss in reach" : ""))
         }
         ; The game moves the respawn point forward as the run progresses. Boss bar up (only the boss is left) -> walk to it and
         ; fight. No bar -> reset; from the pillars respawn the straight bridge leads through the last group to the boss.
@@ -734,6 +816,13 @@ TitanRun(fresh) {
     }
     if !running
         return
+    if over = "raid" {
+        global titanCut := true                       ; not a failed run: TitanResults leaves the fail count alone
+        Log("Titan: the raid is due - ending this run (" (A_TickCount - t0) // 1000 " s)")
+        over := ""
+        TitanEndRun(t0, "run cut for the raid", &over)
+        ReleaseKeys()
+    }
     Log("Titan: run over after " (A_TickCount - t0) // 1000 " s (" (over = "" ? "time limit" : over) ")")
     if over = "" {
         RestartRoblox("Titan run did not end", , 60000)
@@ -743,13 +832,59 @@ TitanRun(fresh) {
         TitanResults()
 }
 
+; Hardcore: 3 resets use up the lives, the run ends in F and the results screen follows (RETRY or LEAVE by the goal).
+; No click goes out while the Revive screen shows (TitanReset checks it: REVIVE costs 50 gems). titanEnding keeps TitanOver
+; from answering "raid" again meanwhile.
+TitanEndRun(t0, why, &over) {
+    global titanEnding := true
+    tk := A_TickCount
+    try {
+        while running && over = "" && A_TickCount - tk < 120000 {
+            SetStatus("Titan: ending the run (" why ")")
+            TitanReset()
+            if !TitanWait(9000, &over)
+                break
+        }
+    } finally
+        titanEnding := false
+    Log("  Titan: " why " ended after " (A_TickCount - t0) // 1000 " s (" (over = "" ? "still running" : over) ")")
+}
+
+; Titan benched after TITAN_FAIL_MAX failed runs in a row. When the bench time is over, one more run is tried: a failure
+; benches it again at once (the count is left one short of the limit), a cleared run brings Titan back
+TitanBenched() {
+    global titanFails, titanBenchUntil
+    if !titanBenchUntil
+        return false
+    if A_TickCount < titanBenchUntil
+        return true
+    titanBenchUntil := 0, titanFails := TITAN_FAIL_MAX - 1
+    Log("Titan: bench time over - trying one run again")
+    return false
+}
+
 ; RETRY keeps farming without the lobby; LEAVE when another mode is due
 TitanResults() {
     global titanArmed
     ParkMouse()
     Sleep 2500                                         ; rewards are drawn one by one
     Screenshot("titan_end")
-    Log("  Titan results: " RegExReplace(OcrRegion([300, 200, 1320, 520]), "\s+", " "))
+    txt := RegExReplace(OcrRegion([300, 200, 1320, 520]), "\s+", " ")
+    Log("  Titan results: " txt)
+    ; a cleared run shows "Best Time" and the ACCESSORY PITY bar; a failed one (time out, lives gone) only "Damage: N"
+    global titanFails, titanBenchUntil, titanCut
+    if titanCut
+        titanCut := false                             ; the bot ended it for the raid
+    else if RegExMatch(txt, "i)Best\s*Time|PITY")
+        titanFails := 0
+    else if RegExMatch(txt, "i)Damage") {
+        titanFails++
+        Log("WARNING: Titan run failed - no rewards (" titanFails " in a row)")
+        if titanFails >= TITAN_FAIL_MAX {
+            titanBenchUntil := A_TickCount + TITAN_BENCH
+            Log("WARNING: Titan failed " titanFails " runs in a row - farming Infinity instead for " TITAN_BENCH // 60000 " min")
+        }
+    }
     goal := Target()
     if goal = "titan" {
         SetStatus("Titan: RETRY")

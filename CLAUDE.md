@@ -77,7 +77,20 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
 
 - **White flashes and bright floors** matched PLAY and the AUTO letters, giving false "lobby" and LEAVE mid-fight. Hence `FightHud`
   (AUTO letters plus non-white pixels around them), `LobbyPlay` (PLAY without HUD on 3 ticks in a row) and tight `LetterBox` search boxes.
-- **AUTO letters:** OFF at 714,840, ON at 706,842. OFF diamond can be dark as well as red. Never treat ON as off, or a click turns Auto off.
+- **13 Nov: AUTO redrawn in a bolder font** (update note "Auto is now available in Raids and Speed Raids!"). Neither template
+  matched, so 7 raids overnight (12-13 Nov) ran with Auto off: the character stood still, no gems or tokens, no log line. New
+  `auto_off_3.png` (48x12 at 714,840) and `auto_on_3.png` (67x10 at **704,841**, wider than before) hold only the white letter
+  pixels. `AutoMissingCheck` now logs a WARNING and screenshots `auto_missing` when no Auto button is seen 25 s into a run.
+- **Titan watchdog (13 Nov):** overnight every Titan run timed out (F rank, "Damage: 1296"): the 8 enemies on the bridge never
+  came down, and Roblox restarts did not help. The next day it worked again with the same code. Results without "Best Time/PITY"
+  count as failed; 3 in a row bench Titan for 60 min and Infinity runs instead (`TitanBenched`).
+  Cause found the same day: some runs end leg 2 (D) against the wall short of the stairs up to the bridge (leg 1's fight
+  pushes the character), and the 8 on the bridge never come. Cleared runs show 13 at leg 3. Now: still 8 after leg 2 = a step
+  W 1200 + D 2500 (rescued the first run it was tried on, 16:10); still 8 at legs 1-4 = a dead run, ended at once with
+  Hardcore resets (`TitanEndRun`) and RETRY. A run is also ended when the raid becomes the goal (13 Nov 15:36: RETRY 22 s
+  before "raid soon", a 10 min failed run, the Group Finder queue was missed). The watchdog variables live in
+  RaidBot.ahk before the `#Include` lines, because ui.ahk calls `Target()` while it loads.
+- **AUTO letters:** OFF at 714,840, ON at 706,842 (before 13 Nov; see above). OFF diamond can be dark as well as red. Never treat ON as off, or a click turns Auto off.
 - **Focus:** if another window is in front, Windows blocks focus stealing and the bot would read and click that window (missed the
   11:45 raid on 7 Nov). Roblox is always-on-top while running, cleared in `Stop`; while it is not active the bot waits.
 - **Not Responding** (10 Nov): Windows covers a hung Roblox with a ghost window owned by dwm.exe, so the focus check above
@@ -94,7 +107,23 @@ Speed Raid) and `infFullAuto=1` (Infinity). The bot only keeps Auto on. Do not b
   When the raid opens, the banner changes to "Group found! / 8/8 Starting..." with no CANCEL or Time, and the teleport follows
   about 20 s later. `GfBannerShown` accepts both forms. A click 5:48 before opening gave no queue, while 4:02 before worked.
   A Halloween group teleport worked on 10 Nov (16:45).
+- **Halloween Raid, 10 Nov 16:45:** the AUTO click never turned Auto on (3 clicks every 30 s for 7 min). The character stood
+  still, the in-fight counter reached 4, and there were 5 deaths. The same click worked first time in a Divine Group Finder raid
+  at 17:46. Cause (found 10 Nov 19:55): the group teleport came while the bot was searching the Group Finder list, and
+  `ListWheel("Up", 80)` zoomed the arena camera into first person, which locks the cursor at the centre, so AUTO clicks missed.
+  Auto works by hand there (user). Fix: `ListWheel` and `PickRaidByName` stop when `FightHud()` shows, and `AutoEnsure` scrolls
+  the camera out after 3 failed clicks. **Never send the mouse wheel in a fight.**
+  Divine through Group Finder: Rewards 62 in 6:37 (solo 60 in 7:53). Gems and tokens were not read from the group raid's results.
 - The `menuOk` guard: mode cards count only while PLAY is dimmed, otherwise the lobby false-matches them.
+- **12 Nov: text drawn slightly differently** (game or Roblox update). Letter edges shifted by sub-pixels: `create_tab`,
+  `create_final` and `start` stopped matching (stuck on "screen not recognised" at the Dimension Join window), and the Titan
+  `EnemiesSig` prints changed ("11" was 30,15,30,23,12, now 38,16,31,24,13), so every count read "?" and Hardcore lives went
+  on resets. Fixes: `*_3.png` templates keep only pixels both renders agree on (edges FF00FF), and `TitanCount` OCRs an unknown
+  print (`ocr.ps1 -Red`) and remembers it for the session; the log line "count N read by OCR - signature ..." gives pairs
+  for `TITAN_COUNTS`. The Dimension window now opens on the **Join** tab (public dimension lobbies listed).
+- **Raid clock dropped digit:** OCR read "22:02" as "2:02" twice in 1.5 s and moved the raid to :24:57. A one-digit-minute
+  reading never moves the clock now. In the raid world the Create list holds raids only: titan goal there with no Dimension
+  found for 75 s restarts Roblox.
 
 ## Operating it
 

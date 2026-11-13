@@ -340,6 +340,12 @@ raidDoneKey := IniRead(INI, "state", "raidDoneKey", "")
 ; plan (infStop, createFrom, the 10 min window, Speed Raid cut-off, "raid done this hour") runs on the shifted hour.
 raidOfs := Mod(IntOr0(IniRead(INI, "state", "raidOfs", "0")), 3600)
 raidCand := -1           ; a raid time read once, waiting for a second reading that agrees (RaidClockLearn)
+; Titan watchdog (titan.ahk). 12-13.11: from 22:19 every run ran out the 10:00 with "Damage: 1296" and no rewards (F rank),
+; 50 runs overnight, and nothing noticed it. TITAN_FAIL_MAX failed runs in a row bench Titan for TITAN_BENCH ms (Infinity instead)
+titanFails := 0, titanBenchUntil := 0, titanDiag := false, titanRunsHere := 0, titanDead := false, titanEnding := false, titanCut := false
+TITAN_FAIL_MAX := 3
+TITAN_BENCH := 3600000
+TITAN_DIAG_LEGS := [1, 2, 4, 6, 9]       ; screenshots after these legs when the last run failed (or the first run)
 
 if A_Args.Length && A_Args[1] = "fight"                 ; тест бою: лише скіли
     cfg["fightOnly"] := "1"
@@ -1077,6 +1083,14 @@ RaidClockLearn(txt) {
         raidCand := -1                                    ; the time in use is confirmed - a stray earlier reading is dropped
         return true
     }
+    ; 12.11 12:22: OCR read "Raid Opens in: 22:02" as "2:02" twice in 1.5 s, the bot moved the raid to :24:57 and left Titan
+    ; for a raid 20 min away (6.11: "41:28" as "4:28" too). A dropped first digit repeats, so two readings do not catch it:
+    ; a one-digit minute never moves the clock - a later visit to the menu reads two digits
+    if StrLen(m[1]) < 2 {
+        Log("  raid clock: ignoring '" Trim(SubStr(txt, 1, 60)) "' - one-digit minutes, could be a dropped digit (keeping :"
+            . Format("{:02}:{:02}", raidOfs // 60, Mod(raidOfs, 60)) ")")
+        return true
+    }
     ; a new time only when two readings agree: 6.11 22:03 OCR read "Raid Opens in: 41:28" as "4:28", the bot took the raid
     ; for 22:08, left Infinity for it and the next read said :45 again
     static candAt := 0
@@ -1133,12 +1147,12 @@ PickTarget(&why) {
     speedWhy := cfg["speed"] != "1" ? "Speed Raid is off"
         : speedDue && DateDiff(A_Now, speedDue, "Seconds") < 0 ? "next Speed Raid at " FormatTime(speedDue, "HH:mm")
         : "Speed Raid is not started after minute " SPEED_LAST_MIN " while the raid is on"
-    if cfg["titan"] = "1" {
+    if cfg["titan"] = "1" && !TitanBenched() {
         why := speedWhy
         return "titan"
     }
-    if infOn {
-        why := speedWhy
+    if infOn || cfg["titan"] = "1" {                  ; Titan benched (failing runs): Infinity farms meanwhile
+        why := cfg["titan"] = "1" && !infOn ? "Titan keeps failing - Infinity meanwhile" : speedWhy
         return "infinity"
     }
     why := speedWhy
@@ -1342,6 +1356,7 @@ Step() {
             else {
                 if A_TickCount - fightSince > 2000
                     AutoEnsure()
+                AutoMissingCheck()
                 SetStatus((lastEntered = "speed" ? "Speed Raid" : "raid") ": Auto, waiting for the end")
             }
             return
@@ -1748,10 +1763,25 @@ Step() {
             Sleep 1500
         }
         ; 4.11: the Halloween Dimension event card pushed Infinite Mode down and infinite.png stopped matching - pick it by name
+        static dimMissFrom := 0, dimMissAt := 0
         if goal = "titan" && PickTitan() {
             SetEntered("titan")                                    ; 9.11: the list can open without the DIMENSION card click, and the run was treated as Infinity
+            dimMissFrom := 0
             Sleep 1500
             return
+        }
+        ; 12.11 12:26: in the raid world this window lists raids, not dimensions; with the list scrolled the raid cards were
+        ; not seen, so the "raid world -> restart" path never ran and the bot searched for Giant Dimension again and again.
+        ; PickTitan searches at most every 30 s: misses for 75 s = 3 searches
+        if goal = "titan" {
+            if !dimMissFrom || A_TickCount - dimMissAt > 120000
+                dimMissFrom := A_TickCount
+            dimMissAt := A_TickCount
+            if A_TickCount - dimMissFrom > 75000 {
+                dimMissFrom := 0
+                RestartRoblox("the Dimension is not in the Create list for 75 s (raid world?)", , 60000)
+                return
+            }
         }
         if goal = "infinity" && PickInfinity() {
             SetEntered("infinity")
@@ -2368,6 +2398,10 @@ PickRaidByName(rd, isRaid := true, btn := "i)reate") {
     Sleep 1500                                            ; 4.11: the list keeps sliding after the wheel - OCR read an empty moving list
     prev := "-", empty := 0
     Loop 80 {
+        if FightHud() {                                   ; 10.11 16:45: the group teleport came mid-search - the wheel
+            Log("  teleported into a fight - leaving the list")   ; zoomed the arena camera into first person
+            return false
+        }
         lines := OcrRegion(b, true)
         if !lines.Length && ++empty <= 4 {                 ; nothing read: the list is still moving - read again, do not scroll
             Sleep 700
@@ -2422,6 +2456,8 @@ PickRaidByName(rd, isRaid := true, btn := "i)reate") {
 ; Гортає список рейдів колесом. Roblox ловить колесо лише над списком після руху миші,
 ; тому спершу ворушимо мишу, а оберти шлемо по одному.
 ListWheel(dir, n, gap := 25) {
+    if FightHud()                                         ; never scroll in a fight: it zooms the camera (first person
+        return                                            ; locks the cursor and AUTO clicks miss - 10.11 Halloween)
     b := RAID_LIST
     cx := b[1] + 60, cy := b[2] + b[4] // 2
     MouseMove cx + 8, cy + 8, 0

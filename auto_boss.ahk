@@ -145,6 +145,24 @@ AutoRunEnd() {
 ; ms since the fight ended (the game's Speed Raid timer starts at the victory)
 SinceFight() => cfg["bossAuto"] = "1" && autoSeen ? A_TickCount - autoSeen : A_TickCount - lastFight
 
+; 12-13.11: 7 raids "fought" 8 min each with the Auto button never seen (lobby check: hudSeen 0, auto_off/auto_on no) - the
+; character stood still, Rewards counter 4, no gems or tokens, and the log said nothing. The game's update notes then read
+; "Auto is now available in Raids and Speed Raids!", so the button may look different or sit elsewhere. A run with no Auto
+; button for 25 s gets a WARNING and up to 3 screenshots (60 s apart) to cut new templates from.
+AutoMissingCheck() {
+    static runKey := 0, shots := 0, lastShot := 0
+    if !fightSince || autoBtnAt
+        return
+    if runKey != fightSince
+        runKey := fightSince, shots := 0, lastShot := 0
+    if A_TickCount - fightSince < 25000 || shots >= 3 || lastShot && A_TickCount - lastShot < 60000
+        return
+    shots++, lastShot := A_TickCount
+    Log("WARNING: " (lastEntered = "speed" ? "Speed Raid" : "raid") ": no Auto button seen for "
+        . (A_TickCount - fightSince) // 1000 " s - Auto is probably off (" FightHudWhy() ")")
+    Screenshot("auto_missing")
+}
+
 ; press AUTO only when the OFF look is really seen (never blindly: while dead Auto stays on)
 AutoEnsure() {
     global autoTries, autoAt, autoWinAt, autoFailLogged, autoOnLogged
@@ -157,8 +175,18 @@ AutoEnsure() {
         if autoTries >= 3 {
             if !autoFailLogged {
                 autoFailLogged := true
-                Log("Auto: still off after 3 clicks")
+                Log("Auto: still off after 3 clicks - zooming the camera out (first person locks the cursor)")
                 Screenshot("auto_fail")
+            }
+            static zoomAt := 0
+            if A_TickCount - zoomAt > 30000 {             ; 10.11 Halloween: list wheel zoomed into first person
+                zoomAt := A_TickCount
+                MouseMove 960, 500, 0
+                Loop 30 {
+                    Send "{WheelDown}"
+                    Sleep 20
+                }
+                ParkMouse()
             }
             return
         }

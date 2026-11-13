@@ -1,4 +1,4 @@
-param([string]$Img, [string]$Out, [switch]$White, [int]$Scale = 3, [switch]$Lines, [int]$Thresh = 215,
+param([string]$Img, [string]$Out, [switch]$White, [switch]$Red,[int]$Scale = 3, [switch]$Lines, [int]$Thresh = 215,
       [string]$Serve, [int]$Parent = 0)
 # Розпізнає текст на картинці вбудованим у Windows 10 OCR (Windows.Media.Ocr, англійська) і пише його в $Out.
 # Викликає RaidBot.ahk: лічильник нагород у бою ("Rewards: 24") і числа під іконками нагород рейду.
@@ -55,7 +55,9 @@ function OcrFile([string]$img, [string]$out, [bool]$white, [int]$scale, [bool]$l
             for ($y = 0; $y -lt $src.Height; $y++) {
                 for ($x = 0; $x -lt $src.Width; $x++) {
                     $c = $src.GetPixel($x, $y)
-                    $v = if ($c.R -gt $thresh -and $c.G -gt $thresh -and $c.B -gt $thresh) { 0 } else { 255 }
+                    # -Red (12.11): the red ENEMIES LEFT count of the Dimensions - red pixels become black
+                    $hit = if ($script:redMode) { $c.R -gt 180 -and $c.G -lt 130 } else { $c.R -gt $thresh -and $c.G -gt $thresh -and $c.B -gt $thresh }
+                    $v = if ($hit) { 0 } else { 255 }
                     $bw.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($v, $v, $v))
                 }
             }
@@ -91,7 +93,8 @@ function OcrFile([string]$img, [string]$out, [bool]$white, [int]$scale, [bool]$l
 }
 
 if (-not $Serve) {
-    OcrFile $Img $Out $White.IsPresent $Scale $Lines.IsPresent $Thresh
+    $script:redMode = $Red.IsPresent
+    OcrFile $Img $Out ($White.IsPresent -or $Red.IsPresent) $Scale $Lines.IsPresent $Thresh
     exit
 }
 
@@ -112,7 +115,8 @@ while ($true) {
         if ($a.Count -lt 2) { continue }
         # ключі - як у командному рядку: -White, -Lines, -Scale N, -Thresh N
         $opt = if ($a.Count -gt 2) { $a[2] -split '\s+' } else { @() }
-        $white = $opt -contains '-White'; $lines = $opt -contains '-Lines'; $scale = 3; $thresh = 215
+        $script:redMode = $opt -contains '-Red'
+        $white = ($opt -contains '-White') -or $script:redMode; $lines = $opt -contains '-Lines'; $scale = 3; $thresh = 215
         for ($i = 0; $i -lt $opt.Count - 1; $i++) {
             if ($opt[$i] -eq '-Scale') { $scale = [int]$opt[$i + 1] }
             if ($opt[$i] -eq '-Thresh') { $thresh = [int]$opt[$i + 1] }
